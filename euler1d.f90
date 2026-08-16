@@ -22,6 +22,7 @@ program euler1d
   real(kind=8), allocatable :: x(:)
   real(kind=8) :: rhoL, uL, pL, rhoR, uR, pR
   real(kind=8) :: pstar, ustar
+  real(kind=8), parameter :: pi_c = 3.14159265358979323846d0
   integer :: i, nstep, ultimo_guardado
 
   call read_input
@@ -36,9 +37,14 @@ program euler1d
      x(i) = xmin + (i-0.5d0)*dx
   end do
 
-  ! condicion inicial: diafragma en x0
+  ! condicion inicial: diafragma en x0, o perfil suave (test 6)
   do i = 1, N
-     if (x(i) < x0) then
+     if (test == 6) then
+        ! onda de entropia: rho advectada con u=p=1 (convergencia)
+        W(1,i) = 1.0d0 + 0.2d0*sin(2.0d0*pi_c*x(i))
+        W(2,i) = 1.0d0
+        W(3,i) = 1.0d0
+     else if (x(i) < x0) then
         W(:,i) = (/ rhoL, uL, pL /)
      else
         W(:,i) = (/ rhoR, uR, pR /)
@@ -83,9 +89,14 @@ program euler1d
   if (ultimo_guardado /= nstep) call save_output(1)
 
   ! referencia exacta muestreada en los centros de celda
-  call exact_star(rhoL, uL, pL, rhoR, uR, pR, gamma, pstar, ustar)
-  write(*,'(a,es14.6,a,es14.6)') ' exacto: p* =', pstar, '   u* =', ustar
-  call save_exact(pstar, ustar, rhoL, uL, pL, rhoR, uR, pR)
+  if (test == 6) then
+     call save_exact_suave
+  else
+     call exact_star(rhoL, uL, pL, rhoR, uR, pR, gamma, pstar, ustar)
+     write(*,'(a,es14.6,a,es14.6)') ' exacto: p* =', pstar, &
+          '   u* =', ustar
+     call save_exact(pstar, ustar, rhoL, uL, pL, rhoR, uR, pR)
+  end if
 
   write(*,'(a,i6,a,f10.6)') ' pasos: ', nstep, '   t final: ', t
 
@@ -118,6 +129,12 @@ contains
        write(*,*) 'ERROR: N debe ser >= 4'
        stop 1
     end if
+    select case (trim(bc))
+    case ('trans', 'per')
+    case default
+       write(*,*) 'ERROR: bc debe ser trans o per; recibido: ', trim(bc)
+       stop 1
+    end select
     if (cfl <= 0.0d0 .or. cfl > 1.0d0) then
        write(*,*) 'ERROR: cfl debe estar en (0,1]; recibido: ', cfl
        stop 1
@@ -152,8 +169,13 @@ contains
        rL=1.0d0;     vL=-19.59745d0; prL=1000.0d0
        rR=1.0d0;     vR=-19.59745d0; prR=0.01d0
        x0_def=0.8d0; tf_def=0.012d0
+    case (6)   ! onda de entropia suave (estudio de convergencia)
+       rL=1.0d0; vL=1.0d0; prL=1.0d0
+       rR=1.0d0; vR=1.0d0; prR=1.0d0
+       x0_def=0.5d0; tf_def=1.0d0
+       bc = 'per'
     case default
-       stop 'test debe ser 1..5'
+       stop 'test debe ser 1..6'
     end select
     if (x0 < 0.0d0) x0 = x0_def
     if (tf < 0.0d0) tf = tf_def
@@ -182,19 +204,23 @@ contains
 
   !---------------------------------------------------------- fronteras
   subroutine boundary
-    ! transmisivas (gradiente cero) en ambos extremos, 2 fantasmas
-    W(:,0)  = W(:,1);   W(:,-1)  = W(:,1)
-    W(:,N+1)= W(:,N);   W(:,N+2) = W(:,N)
-    U(:,0)  = U(:,1);   U(:,-1)  = U(:,1)
-    U(:,N+1)= U(:,N);   U(:,N+2) = U(:,N)
+    call boundary_of(U)
   end subroutine boundary
 
   subroutine boundary_of(Uc)
+    ! trans: gradiente cero; per: periodicas (test 6)
     real(kind=8), intent(inout) :: Uc(3,-1:N+2)
-    Uc(:,0)  = Uc(:,1);   Uc(:,-1)  = Uc(:,1)
-    Uc(:,N+1)= Uc(:,N);   Uc(:,N+2) = Uc(:,N)
-    W(:,0)  = W(:,1);   W(:,-1)  = W(:,1)
-    W(:,N+1)= W(:,N);   W(:,N+2) = W(:,N)
+    if (trim(bc) == 'per') then
+       Uc(:,0)  = Uc(:,N);   Uc(:,-1)  = Uc(:,N-1)
+       Uc(:,N+1)= Uc(:,1);   Uc(:,N+2) = Uc(:,2)
+       W(:,0)  = W(:,N);   W(:,-1)  = W(:,N-1)
+       W(:,N+1)= W(:,1);   W(:,N+2) = W(:,2)
+    else
+       Uc(:,0)  = Uc(:,1);   Uc(:,-1)  = Uc(:,1)
+       Uc(:,N+1)= Uc(:,N);   Uc(:,N+2) = Uc(:,N)
+       W(:,0)  = W(:,1);   W(:,-1)  = W(:,1)
+       W(:,N+1)= W(:,N);   W(:,N+2) = W(:,N)
+    end if
   end subroutine boundary_of
 
   !---------------------------------------------------------------- dt
@@ -357,6 +383,25 @@ contains
        close(un)
     end do
   end subroutine save_output
+
+  subroutine save_exact_suave
+    ! exacta del test 6: la sinusoide advectada rho(x - u t)
+    real(kind=8) :: arg
+    integer :: k
+    open(31, file='rho_exact.xl',   status='replace')
+    open(32, file='vel_exact.xl',   status='replace')
+    open(33, file='press_exact.xl', status='replace')
+    write(31,'(a,es20.10)') ' #Time = ', t
+    write(32,'(a,es20.10)') ' #Time = ', t
+    write(33,'(a,es20.10)') ' #Time = ', t
+    do k = 1, N
+       arg = 2.0d0*pi_c*(x(k) - t)
+       write(31,'(2es20.10)') x(k), 1.0d0 + 0.2d0*sin(arg)
+       write(32,'(2es20.10)') x(k), 1.0d0
+       write(33,'(2es20.10)') x(k), 1.0d0
+    end do
+    close(31); close(32); close(33)
+  end subroutine save_exact_suave
 
   subroutine save_exact(ps, us, rL, vL, prL, rR, vR, prR)
     real(kind=8), intent(in) :: ps, us, rL, vL, prL, rR, vR, prR

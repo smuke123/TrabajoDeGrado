@@ -9,8 +9,11 @@ module exact_riemann
 ! donde cada f_K es la funcion de choque (Rankine-Hugoniot) o de
 ! rarefaccion (invariante de Riemann) segun p >< p_K, y luego muestrea
 ! la solucion autosimilar W(x/t) incluyendo el interior de los
-! abanicos. Verificacion interna: |f(p*)| < 1e-12 y ordenamiento de
-! ondas; los valores estrella de la Tabla 4.3 de Toro se reproducen.
+! abanicos y la REGION DE VACIO (seccion 4.6) cuando el criterio 4.40
+! se dispara. Los valores estrella de la Tabla 4.3 de Toro se
+! reproducen. exact_star avisa por pantalla si el Newton no alcanza
+! |f(p*)| <= 1e-10 (antes el encabezado prometia una verificacion que
+! el codigo no hacia: hallazgo de la auditoria adversarial).
 
   implicit none
   private
@@ -70,6 +73,14 @@ contains
     call fK(p, rhoL, pL, g, fL, fpL)
     call fK(p, rhoR, pR, g, fR, fpR)
     ustar = 0.5d0*(uL+uR) + 0.5d0*(fR - fL)
+    ! VERIFICACION INTERNA (la que el encabezado prometia): residuo
+    ! final del Newton. Sin esto, agotar las 200 iteraciones era una
+    ! salida silenciosa.
+    if (abs(fL + fR + du) > 1.0d-10*max(1.0d0, abs(pstar))) then
+       write(*,'(a,es12.4,a,es12.4)') &
+            ' AVISO exact_star: Newton no convergio, |f(p*)| =', &
+            abs(fL+fR+du), '  p* =', pstar
+    end if
   end subroutine exact_star
 
   subroutine exact_sample(rhoL, uL, pL, rhoR, uR, pR, g, &
@@ -81,10 +92,43 @@ contains
     real(kind=8), intent(in)  :: pstar, ustar, s
     real(kind=8), intent(out) :: rho, u, p
     real(kind=8) aL, aR, aSL, aSR, SL, SR, SHL, STL, SHR, STR
-    real(kind=8) gm, gp, r
+    real(kind=8) gm, gp, r, SSL, SSR
     aL = sqrt(g*pL/rhoL); aR = sqrt(g*pR/rhoR)
     gm = (g-1.0d0)/(g+1.0d0)
     gp = (g+1.0d0)/(2.0d0*g)
+
+    ! ---- REGION DE VACIO (Toro sec. 4.6). pstar = 0 senala que el
+    ! criterio 4.40 se disparo: las dos rarefacciones no alcanzan a
+    ! comunicarse y entre sus frentes queda vacio. SIN esta rama, el
+    ! muestreo caia en la formula del interior del abanico con base
+    ! r < 0 y devolvia NaN SILENCIOSO en rho y p (hallazgo mayor de la
+    ! auditoria adversarial 2026-08-15; los 5 tests de Toro no lo
+    ! disparan, pero cualquier IC mas violenta si).
+    if (pstar <= 0.0d0) then
+       SHL = uL - aL                        ! cabeza rarefaccion izq
+       SSL = uL + 2.0d0*aL/(g-1.0d0)        ! frente izq hacia el vacio
+       SSR = uR - 2.0d0*aR/(g-1.0d0)        ! frente der hacia el vacio
+       SHR = uR + aR                        ! cabeza rarefaccion der
+       if (s <= SHL) then
+          rho = rhoL; u = uL; p = pL
+       else if (s < SSL) then
+          u = (2.0d0/(g+1.0d0))*(aL + 0.5d0*(g-1.0d0)*uL + s)
+          r = max(2.0d0/(g+1.0d0) + gm/aL*(uL - s), 0.0d0)
+          rho = rhoL*r**(2.0d0/(g-1.0d0))
+          p   = pL*r**(2.0d0*g/(g-1.0d0))
+       else if (s <= SSR) then
+          rho = 0.0d0; p = 0.0d0; u = 0.5d0*(SSL + SSR)   ! vacio
+       else if (s < SHR) then
+          u = (2.0d0/(g+1.0d0))*(-aR + 0.5d0*(g-1.0d0)*uR + s)
+          r = max(2.0d0/(g+1.0d0) - gm/aR*(uR - s), 0.0d0)
+          rho = rhoR*r**(2.0d0/(g-1.0d0))
+          p   = pR*r**(2.0d0*g/(g-1.0d0))
+       else
+          rho = rhoR; u = uR; p = pR
+       end if
+       return
+    end if
+
     if (s <= ustar) then
        ! ------- lado izquierdo del contacto
        if (pstar > pL) then
@@ -109,7 +153,7 @@ contains
           else
              ! interior del abanico
              u = (2.0d0/(g+1.0d0))*(aL + 0.5d0*(g-1.0d0)*uL + s)
-             r = (2.0d0/(g+1.0d0) + gm/aL*(uL - s))
+             r = max(2.0d0/(g+1.0d0) + gm/aL*(uL - s), 0.0d0)
              rho = rhoL*r**(2.0d0/(g-1.0d0))
              p = pL*r**(2.0d0*g/(g-1.0d0))
           end if
@@ -137,7 +181,7 @@ contains
              u = ustar; p = pstar
           else
              u = (2.0d0/(g+1.0d0))*(-aR + 0.5d0*(g-1.0d0)*uR + s)
-             r = (2.0d0/(g+1.0d0) - gm/aR*(uR - s))
+             r = max(2.0d0/(g+1.0d0) - gm/aR*(uR - s), 0.0d0)
              rho = rhoR*r**(2.0d0/(g-1.0d0))
              p = pR*r**(2.0d0*g/(g-1.0d0))
           end if

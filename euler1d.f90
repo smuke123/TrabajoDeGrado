@@ -18,16 +18,18 @@ program euler1d
 
   implicit none
 
-  real(kind=8), allocatable :: U(:,:), U1(:,:), W(:,:), Fnum(:,:)
+  real(kind=8), allocatable :: U(:,:), U1(:,:), U2(:,:), W(:,:), Fnum(:,:)
   real(kind=8), allocatable :: x(:)
   real(kind=8) :: rhoL, uL, pL, rhoR, uR, pR
   real(kind=8) :: pstar, ustar
-  integer :: i, nstep
+  integer :: i, nstep, ultimo_guardado
 
   call read_input
+  call validate_input
   call set_test(rhoL, uL, pL, rhoR, uR, pR)
 
-  allocate(U(3,-1:N+2), U1(3,-1:N+2), W(3,-1:N+2), Fnum(3,0:N), x(1:N))
+  allocate(U(3,-1:N+2), U1(3,-1:N+2), U2(3,-1:N+2), W(3,-1:N+2), &
+           Fnum(3,0:N), x(1:N))
 
   dx = (xmax-xmin)/N
   do i = 1, N
@@ -57,19 +59,28 @@ program euler1d
      call rhs_fv(U, U1)                      ! U1 <- U + dt*L(U)
      call cons2prim_all(U1)
      call boundary_of(U1)
-     call rhs_fv(U1, U1)                     ! U1 <- U1 + dt*L(U1)
-     U(:,1:N) = 0.5d0*(U(:,1:N) + U1(:,1:N))
+     ! OJO (auditoria): rhs_fv(U1,U1) era ALIASING ILEGAL — el mismo
+     ! array como intent(in) e intent(out). Funcionaba por suerte del
+     ! compilador; con -O3/otro compilador es comportamiento
+     ! indefinido. Se usa un array destino separado.
+     call rhs_fv(U1, U2)                     ! U2 <- U1 + dt*L(U1)
+     U(:,1:N) = 0.5d0*(U(:,1:N) + U2(:,1:N))
      call cons2prim_all(U)
      call boundary
 
      t = t + dt
      nstep = nstep + 1
+     ultimo_guardado = -1
      if (every_out > 0) then
-        if (mod(nstep, every_out) == 0) call save_output(1)
+        if (mod(nstep, every_out) == 0) then
+           call save_output(1)
+           ultimo_guardado = nstep
+        end if
      end if
   end do
 
-  call save_output(1)
+  ! no repetir el bloque #Time si el ultimo paso ya se volco
+  if (ultimo_guardado /= nstep) call save_output(1)
 
   ! referencia exacta muestreada en los centros de celda
   call exact_star(rhoL, uL, pL, rhoR, uR, pR, gamma, pstar, ustar)
@@ -79,6 +90,42 @@ program euler1d
   write(*,'(a,i6,a,f10.6)') ' pasos: ', nstep, '   t final: ', t
 
 contains
+
+  !------------------------------------------------ validacion de input
+  subroutine validate_input
+    ! Aceptar en silencio una configuracion invalida es la peor clase
+    ! de fallo: el codigo corre y entrega numeros de OTRO experimento
+    ! (auditoria: solver='HLL' corria HLLC sin avisar).
+    select case (trim(solver))
+    case ('hll', 'hllc')
+    case default
+       write(*,*) 'ERROR: solver debe ser hll o hllc; recibido: ', &
+            trim(solver)
+       stop 1
+    end select
+    select case (trim(limiter))
+    case ('fo', 'mm', 'vl', 'mc', 'sb')
+    case default
+       write(*,*) 'ERROR: limiter debe ser fo|mm|vl|mc|sb; recibido: ', &
+            trim(limiter)
+       stop 1
+    end select
+    if (gamma <= 1.0d0) then
+       write(*,*) 'ERROR: gamma debe ser > 1; recibido: ', gamma
+       stop 1
+    end if
+    if (N < 4) then
+       write(*,*) 'ERROR: N debe ser >= 4'
+       stop 1
+    end if
+    if (cfl <= 0.0d0 .or. cfl > 1.0d0) then
+       write(*,*) 'ERROR: cfl debe estar en (0,1]; recibido: ', cfl
+       stop 1
+    end if
+    write(*,'(a,i2,a,i5,a,a,a,a,a,f6.3)') ' config: test=', test, &
+         '  N=', N, '  solver=', trim(solver), '  limiter=', &
+         trim(limiter), '  cfl=', cfl
+  end subroutine validate_input
 
   !----------------------------------------------------------- tests
   subroutine set_test(rL, vL, prL, rR, vR, prR)

@@ -417,7 +417,7 @@ contains
     real(kind=8), intent(in)  :: Uin(3,-1:N+2)
     real(kind=8), intent(out) :: Uout(3,-1:N+2)
     real(kind=8) :: qL(3), qR(3), sig
-    real(kind=8) :: dm, dp2, Ek, rk
+    real(kind=8) :: dm, dp2, rmas, rmen, Amas, Amen, Vk
     integer :: k, m
     ! flujos de intercelda k+1/2, k = 0..N (MUSCL con limitador)
     do k = 0, N
@@ -460,14 +460,31 @@ contains
           Uout(2,k) = Uout(2,k) - dt*W(1,k)*grav
           Uout(3,k) = Uout(3,k) - dt*W(1,k)*grav*W(2,k)
        end if
-       ! fuente geometrica (cilindrica alpha=1 / esferica alpha=2):
-       ! d_t U + d_r F = -(alpha/r) (rho u, rho u^2, u(E+p))
+       ! GEOMETRIA CONSERVATIVA (cilindrica alpha=1 / esferica
+       ! alpha=2): divergencia con areas A = r^alpha en las caras y
+       ! volumen exacto V = (r_+^{a+1} - r_-^{a+1})/(a+1), mas el
+       ! termino de presion geometrico BIEN BALANCEADO
+       ! S_p = p_k (A_+ - A_-)/V (cancela exacto la divergencia de p
+       ! uniforme — la receta del termino de aro del jet). La forma
+       ! fuente -(alpha/r)F NO conserva: el arranque del Sedov
+       ! inyectaba 42% de energia espuria y sesgaba xi_0 en +6.8%.
        if (alpha_geo > 0) then
-          rk = x(k)
-          Ek = W(3,k)/(gamma-1.0d0) + 0.5d0*W(1,k)*W(2,k)**2
-          Uout(1,k) = Uout(1,k) - dt*alpha_geo/rk*W(1,k)*W(2,k)
-          Uout(2,k) = Uout(2,k) - dt*alpha_geo/rk*W(1,k)*W(2,k)**2
-          Uout(3,k) = Uout(3,k) - dt*alpha_geo/rk*W(2,k)*(Ek+W(3,k))
+          rmas = x(k) + 0.5d0*dx
+          rmen = x(k) - 0.5d0*dx
+          Amas = rmas**alpha_geo
+          Amen = rmen**alpha_geo
+          Vk = (rmas**(alpha_geo+1) - rmen**(alpha_geo+1)) &
+               /dble(alpha_geo+1)
+          ! rehacer la actualizacion con la divergencia geometrica
+          Uout(:,k) = Uin(:,k) &
+               - dt*(Amas*Fnum(:,k) - Amen*Fnum(:,k-1))/Vk
+          ! termino geometrico de presion (solo momento)
+          Uout(2,k) = Uout(2,k) + dt*W(3,k)*(Amas - Amen)/Vk
+          ! re-aplicar gravedad si la hubiera (la actualizacion se rehizo)
+          if (grav /= 0.0d0) then
+             Uout(2,k) = Uout(2,k) - dt*W(1,k)*grav
+             Uout(3,k) = Uout(3,k) - dt*W(1,k)*grav*W(2,k)
+          end if
        end if
     end do
   end subroutine rhs_fv

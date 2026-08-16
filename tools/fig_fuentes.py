@@ -84,7 +84,16 @@ ax.tick_params(direction='in', top=True, right=True, which='both')
 
 ax = axs[1]
 r, rho = bl[-1][:, 0], bl[-1][:, 1]
-ax.plot(r, rho, 'k-', lw=1.0)
+# perfil exacto derivado (sedov_exacto.py): rho/rho0 = G(xi), r = xi R_s
+try:
+    ex = np.loadtxt(os.path.join(RUNS, 'sedov_perfil_exacto.dat'))
+    Rs_fin = Rs[-1]
+    ax.plot(ex[:, 0]*Rs_fin, ex[:, 1], '-', color='0.55', lw=1.6,
+            label='exacta (derivada)')
+except OSError:
+    pass
+ax.plot(r, rho, 'k-', lw=1.0, label='numerica')
+ax.legend(frameon=False, fontsize=9)
 ax.axhline(salto, color='0.5', lw=0.8, ls='--')
 ax.text(0.06, salto*1.02, r'$(\gamma{+}1)/(\gamma{-}1) = 6$',
         fontsize=9, color='0.35')

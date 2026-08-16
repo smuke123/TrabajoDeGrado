@@ -175,7 +175,8 @@ contains
        x0_def=0.5d0; tf_def=1.0d0
        bc = 'per'
     case default
-       stop 'test debe ser 1..6'
+       write(*,*) 'ERROR: test debe ser 1..6'
+       stop 1
     end select
     if (x0 < 0.0d0) x0 = x0_def
     if (tf < 0.0d0) tf = tf_def
@@ -338,7 +339,8 @@ contains
   !------------------------------------------- paso de volumen finito
   subroutine rhs_fv(Uin, Uout)
     ! Uout = Uin + dt * L(Uin) con L el operador de volumen finito.
-    ! Las primitivas W corresponden a Uin (el llamador las mantiene).
+    ! CONTRATO: la reconstruccion lee la W GLOBAL; el llamador DEBE
+    ! haber sincronizado W con Uin (cons2prim + boundary) justo antes.
     real(kind=8), intent(in)  :: Uin(3,-1:N+2)
     real(kind=8), intent(out) :: Uout(3,-1:N+2)
     real(kind=8) :: qL(3), qR(3), sig
@@ -377,7 +379,7 @@ contains
        end if
        write(un,'(a,es20.10)') ' #Time = ', t
        do k = 1, N
-          write(un,'(2es20.10)') x(k), W(m,k)
+          write(un,'(2es20.10e3)') x(k), W(m,k)
        end do
        write(un,*)
        close(un)
@@ -396,9 +398,9 @@ contains
     write(33,'(a,es20.10)') ' #Time = ', t
     do k = 1, N
        arg = 2.0d0*pi_c*(x(k) - t)
-       write(31,'(2es20.10)') x(k), 1.0d0 + 0.2d0*sin(arg)
-       write(32,'(2es20.10)') x(k), 1.0d0
-       write(33,'(2es20.10)') x(k), 1.0d0
+       write(31,'(2es20.10e3)') x(k), 1.0d0 + 0.2d0*sin(arg)
+       write(32,'(2es20.10e3)') x(k), 1.0d0
+       write(33,'(2es20.10e3)') x(k), 1.0d0
     end do
     close(31); close(32); close(33)
   end subroutine save_exact_suave
@@ -417,9 +419,9 @@ contains
        s = (x(k) - x0)/max(t, 1.0d-30)
        call exact_sample(rL, vL, prL, rR, vR, prR, gamma, &
                          ps, us, s, rho_e, u_e, p_e)
-       write(31,'(2es20.10)') x(k), rho_e
-       write(32,'(2es20.10)') x(k), u_e
-       write(33,'(2es20.10)') x(k), p_e
+       write(31,'(2es20.10e3)') x(k), rho_e
+       write(32,'(2es20.10e3)') x(k), u_e
+       write(33,'(2es20.10e3)') x(k), p_e
     end do
     close(31); close(32); close(33)
   end subroutine save_exact

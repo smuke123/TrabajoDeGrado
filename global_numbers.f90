@@ -12,7 +12,9 @@ module global_numbers
   real(kind=8) :: cfl = 0.9d0   ! numero de Courant
   real(kind=8) :: gamma = 1.4d0 ! indice adiabatico
   character(len=8) :: limiter = 'vl'    ! fo|mm|vl|mc|sb
-  character(len=8) :: bc = 'trans'      ! trans|per (periodicas)
+  character(len=8) :: bc = 'trans'      ! trans|per|refl
+  real(kind=8) :: grav = 0.0d0          ! gravedad (+x hacia abajo: S=-rho g)
+  integer :: alpha_geo = 0              ! 0 plano | 1 cilindrico | 2 esferico
   character(len=8) :: solver  = 'hllc'  ! hll|hllc
   real(kind=8) :: xmin = 0.0d0, xmax = 1.0d0
   real(kind=8) :: x0 = -1.0d0   ! diafragma (si <0, lo fija el test)
@@ -28,7 +30,7 @@ contains
   subroutine read_input
     integer ios
     namelist /euler/ test, N, cfl, gamma, limiter, solver, bc, &
-         xmin, xmax, x0, tf, every_out
+         xmin, xmax, x0, tf, every_out, grav, alpha_geo
     open(10, file='input.par', status='old', iostat=ios)
     if (ios == 0) then
        read(10, nml=euler, iostat=ios)

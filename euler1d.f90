@@ -37,19 +37,47 @@ program euler1d
      x(i) = xmin + (i-0.5d0)*dx
   end do
 
-  ! condicion inicial: diafragma en x0, o perfil suave (test 6)
+  ! condicion inicial: diafragma en x0, o perfil propio (tests 6-8)
   do i = 1, N
      if (test == 6) then
         ! onda de entropia: rho advectada con u=p=1 (convergencia)
         W(1,i) = 1.0d0 + 0.2d0*sin(2.0d0*pi_c*x(i))
         W(2,i) = 1.0d0
         W(3,i) = 1.0d0
+     else if (test == 7) then
+        ! atmosfera isoterma rho = e^{-g x / T0}, T0 = 1. La presion
+        ! se impone en EQUILIBRIO DISCRETO (regla trapezoidal, la
+        ! misma cuadratura del esquema): p_{i+1} = p_i - g dx
+        ! (rho_i + rho_{i+1})/2 — asi el balance es exacto celda a
+        ! celda y el residuo del reposo mide SOLO al esquema.
+        W(1,i) = exp(-grav*x(i))
+        W(2,i) = 0.0d0
+        W(3,i) = 1.0d0   ! se sobreescribe abajo
+     else if (test == 8) then
+        ! Sedov: ambiente frio + energia E0=1 en r < r_ini
+        W(1,i) = 1.0d0
+        W(2,i) = 0.0d0
+        W(3,i) = 1.0d-9
      else if (x(i) < x0) then
         W(:,i) = (/ rhoL, uL, pL /)
      else
         W(:,i) = (/ rhoR, uR, pR /)
      end if
   end do
+  if (test == 7) then
+     W(3,1) = W(1,1)*1.0d0
+     do i = 2, N
+        W(3,i) = W(3,i-1) - grav*dx*0.5d0*(W(1,i-1) + W(1,i))
+     end do
+  end if
+  if (test == 8) then
+     ! E0 = 1 repartida como presion en las primeras 4 celdas:
+     ! p = 3 (gamma-1) E0 / (4 pi r_ini^3)
+     do i = 1, 4
+        W(3,i) = 3.0d0*(gamma-1.0d0)*1.0d0 / &
+             (4.0d0*pi_c*(x(4)+0.5d0*dx)**3)
+     end do
+  end if
   call prim2cons_all
   call boundary
 
@@ -98,6 +126,10 @@ program euler1d
      call save_exact(pstar, ustar, rhoL, uL, pL, rhoR, uR, pR)
   end if
 
+  if (test == 7) then
+     write(*,'(a,es12.4)') ' balance hidrostatico: max|u| = ', &
+          maxval(abs(W(2,1:N)))
+  end if
   write(*,'(a,i6,a,f10.6)') ' pasos: ', nstep, '   t final: ', t
 
 contains
@@ -130,9 +162,9 @@ contains
        stop 1
     end if
     select case (trim(bc))
-    case ('trans', 'per')
+    case ('trans', 'per', 'refl')
     case default
-       write(*,*) 'ERROR: bc debe ser trans o per; recibido: ', trim(bc)
+       write(*,*) 'ERROR: bc trans|per|refl; recibido: ', trim(bc)
        stop 1
     end select
     if (cfl <= 0.0d0 .or. cfl > 1.0d0) then
@@ -174,8 +206,21 @@ contains
        rR=1.0d0; vR=1.0d0; prR=1.0d0
        x0_def=0.5d0; tf_def=1.0d0
        bc = 'per'
+    case (7)   ! atmosfera hidrostatica isoterma (bien balanceado)
+       rL=1.0d0; vL=0.0d0; prL=1.0d0    ! (no se usan: IC propia)
+       rR=1.0d0; vR=0.0d0; prR=1.0d0
+       x0_def=0.5d0; tf_def=10.0d0
+       bc = 'refl'
+       if (grav == 0.0d0) grav = 1.0d0
+    case (8)   ! Sedov-Taylor esferico (fuente geometrica alpha=2)
+       rL=1.0d0; vL=0.0d0; prL=1.0d0
+       rR=1.0d0; vR=0.0d0; prR=1.0d0
+       x0_def=0.5d0; tf_def=0.5d0
+       bc = 'refl'
+       alpha_geo = 2
+       xmax = 1.2d0
     case default
-       write(*,*) 'ERROR: test debe ser 1..6'
+       write(*,*) 'ERROR: test debe ser 1..8'
        stop 1
     end select
     if (x0 < 0.0d0) x0 = x0_def
@@ -209,9 +254,37 @@ contains
   end subroutine boundary
 
   subroutine boundary_of(Uc)
-    ! trans: gradiente cero; per: periodicas (test 6)
+    ! trans: gradiente cero; per: periodicas; refl: paredes (u -> -u)
     real(kind=8), intent(inout) :: Uc(3,-1:N+2)
-    if (trim(bc) == 'per') then
+    if (trim(bc) == 'refl') then
+       ! espejo en rho y u; la PRESION de los fantasmas continua el
+       ! equilibrio discreto trapezoidal cuando hay gravedad (con el
+       ! espejo plano dp=0 las desviaciones hidrostaticas no se anulan
+       ! en las interfaces de pared y el reposo genera u ~ 1e-3)
+       W(1,0) = W(1,1);  W(2,0) = -W(2,1)
+       W(1,-1) = W(1,2); W(2,-1) = -W(2,2)
+       W(1,N+1) = W(1,N);  W(2,N+1) = -W(2,N)
+       W(1,N+2) = W(1,N-1); W(2,N+2) = -W(2,N-1)
+       if (grav /= 0.0d0) then
+          W(3,0)  = W(3,1) + grav*dx*0.5d0*(W(1,0)+W(1,1))
+          W(3,-1) = W(3,0) + grav*dx*0.5d0*(W(1,-1)+W(1,0))
+          W(3,N+1) = W(3,N) - grav*dx*0.5d0*(W(1,N+1)+W(1,N))
+          W(3,N+2) = W(3,N+1) - grav*dx*0.5d0*(W(1,N+2)+W(1,N+1))
+       else
+          W(3,0) = W(3,1);  W(3,-1) = W(3,2)
+          W(3,N+1) = W(3,N); W(3,N+2) = W(3,N-1)
+       end if
+       Uc(1,0) = W(1,0); Uc(2,0) = W(1,0)*W(2,0)
+       Uc(3,0) = W(3,0)/(gamma-1.0d0) + 0.5d0*W(1,0)*W(2,0)**2
+       Uc(1,-1) = W(1,-1); Uc(2,-1) = W(1,-1)*W(2,-1)
+       Uc(3,-1) = W(3,-1)/(gamma-1.0d0) + 0.5d0*W(1,-1)*W(2,-1)**2
+       Uc(1,N+1) = W(1,N+1); Uc(2,N+1) = W(1,N+1)*W(2,N+1)
+       Uc(3,N+1) = W(3,N+1)/(gamma-1.0d0) &
+            + 0.5d0*W(1,N+1)*W(2,N+1)**2
+       Uc(1,N+2) = W(1,N+2); Uc(2,N+2) = W(1,N+2)*W(2,N+2)
+       Uc(3,N+2) = W(3,N+2)/(gamma-1.0d0) &
+            + 0.5d0*W(1,N+2)*W(2,N+2)**2
+    else if (trim(bc) == 'per') then
        Uc(:,0)  = Uc(:,N);   Uc(:,-1)  = Uc(:,N-1)
        Uc(:,N+1)= Uc(:,1);   Uc(:,N+2) = Uc(:,2)
        W(:,0)  = W(:,N);   W(:,-1)  = W(:,N-1)
@@ -344,14 +417,36 @@ contains
     real(kind=8), intent(in)  :: Uin(3,-1:N+2)
     real(kind=8), intent(out) :: Uout(3,-1:N+2)
     real(kind=8) :: qL(3), qR(3), sig
+    real(kind=8) :: dm, dp2, Ek, rk
     integer :: k, m
     ! flujos de intercelda k+1/2, k = 0..N (MUSCL con limitador)
     do k = 0, N
        do m = 1, 3
-          sig  = reconstructor(W(m,k)-W(m,k-1), W(m,k+1)-W(m,k))
-          qL(m) = W(m,k) + 0.5d0*sig
-          sig  = reconstructor(W(m,k+1)-W(m,k), W(m,k+2)-W(m,k+1))
-          qR(m) = W(m,k+1) - 0.5d0*sig
+          if (m == 3 .and. grav /= 0.0d0) then
+             ! RECONSTRUCCION HIDROSTATICA (Kaeppeli-Mishra 2o orden):
+             ! se reconstruye la DESVIACION de p respecto a la
+             ! extrapolacion hidrostatica local de cada celda,
+             !   delta_{k,k+-1} = (p_{k+-1}-p_k) +- g dx (rho_k+rho_{k+-1})/2
+             ! y la cara lleva p_hidro + desviacion limitada:
+             !   p_cara = p_k -+ rho_k g dx/2 + sigma(delta)/2.
+             ! En el equilibrio discreto trapezoidal las delta son CERO
+             ! -> ambas caras coinciden y el flujo cancela la fuente
+             ! -rho g EXACTAMENTE (cero maquina, test 7).
+             dm  = (W(3,k)-W(3,k-1)) + grav*dx*0.5d0*(W(1,k)+W(1,k-1))
+             dp2 = (W(3,k+1)-W(3,k)) + grav*dx*0.5d0*(W(1,k+1)+W(1,k))
+             sig = reconstructor(dm, dp2)
+             qL(3) = W(3,k) - 0.5d0*grav*dx*W(1,k) + 0.5d0*sig
+             dm  = (W(3,k+1)-W(3,k)) + grav*dx*0.5d0*(W(1,k+1)+W(1,k))
+             dp2 = (W(3,k+2)-W(3,k+1)) &
+                  + grav*dx*0.5d0*(W(1,k+2)+W(1,k+1))
+             sig = reconstructor(dm, dp2)
+             qR(3) = W(3,k+1) + 0.5d0*grav*dx*W(1,k+1) - 0.5d0*sig
+          else
+             sig  = reconstructor(W(m,k)-W(m,k-1), W(m,k+1)-W(m,k))
+             qL(m) = W(m,k) + 0.5d0*sig
+             sig  = reconstructor(W(m,k+1)-W(m,k), W(m,k+2)-W(m,k+1))
+             qR(m) = W(m,k+1) - 0.5d0*sig
+          end if
        end do
        ! positividad de los estados de cara
        qL(1) = max(qL(1), rho_floor); qL(3) = max(qL(3), p_floor)
@@ -360,6 +455,20 @@ contains
     end do
     do k = 1, N
        Uout(:,k) = Uin(:,k) - dt/dx*(Fnum(:,k) - Fnum(:,k-1))
+       ! fuente gravitatoria (momento y su trabajo)
+       if (grav /= 0.0d0) then
+          Uout(2,k) = Uout(2,k) - dt*W(1,k)*grav
+          Uout(3,k) = Uout(3,k) - dt*W(1,k)*grav*W(2,k)
+       end if
+       ! fuente geometrica (cilindrica alpha=1 / esferica alpha=2):
+       ! d_t U + d_r F = -(alpha/r) (rho u, rho u^2, u(E+p))
+       if (alpha_geo > 0) then
+          rk = x(k)
+          Ek = W(3,k)/(gamma-1.0d0) + 0.5d0*W(1,k)*W(2,k)**2
+          Uout(1,k) = Uout(1,k) - dt*alpha_geo/rk*W(1,k)*W(2,k)
+          Uout(2,k) = Uout(2,k) - dt*alpha_geo/rk*W(1,k)*W(2,k)**2
+          Uout(3,k) = Uout(3,k) - dt*alpha_geo/rk*W(2,k)*(Ek+W(3,k))
+       end if
     end do
   end subroutine rhs_fv
 

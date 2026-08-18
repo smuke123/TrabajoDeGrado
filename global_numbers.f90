@@ -28,13 +28,26 @@ module global_numbers
 contains
 
   subroutine read_input
+    ! el iostat del namelist SE COMPRUEBA (auditoria del MHD2D): una
+    ! errata de un caracter hacia correr otra malla u otro test EN
+    ! SILENCIO, porque la lectura es SECUENCIAL (lo anterior al error
+    ! queda asignado y el resto en su valor por defecto) y los
+    ! centinelas de rango no distinguen un defecto sano de un descuido
     integer ios
+    character(len=200) :: nmlmsg
     namelist /euler/ test, N, cfl, gamma, limiter, solver, bc, &
          xmin, xmax, x0, tf, every_out, grav, alpha_geo
-    open(10, file='input.par', status='old', iostat=ios)
-    if (ios == 0) then
-       read(10, nml=euler, iostat=ios)
-       close(10)
+    open(10, file='input.par', status='old', iostat=ios, iomsg=nmlmsg)
+    if (ios /= 0) then
+       write(*,*) 'ERROR: no se pudo abrir input.par: ', trim(nmlmsg)
+       stop 1
+    end if
+    read(10, nml=euler, iostat=ios, iomsg=nmlmsg)
+    close(10)
+    if (ios /= 0) then
+       write(*,*) 'ERROR: fallo leyendo el namelist &euler de input.par'
+       write(*,*) '       iostat=', ios, '  ', trim(nmlmsg)
+       stop 1
     end if
   end subroutine read_input
 

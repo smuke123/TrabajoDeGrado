@@ -1,0 +1,1190 @@
+% =============================================================================
+%  Reunión de avance y alineación — Trabajo de grado
+%  Framework computacional de volúmenes finitos para las ecuaciones de Euler
+%
+%  Compilar con:  pdflatex presentacion_avance.tex   (dos veces)
+%  Tema: Madrid (disponible en cualquier instalación de LaTeX y en Overleaf).
+%  Para usar Metropolis en su lugar, comentar la línea \usetheme{Madrid}
+%  y descomentar el bloque marcado como ALTERNATIVA METROPOLIS.
+% =============================================================================
+\documentclass[aspectratio=169,10pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot,es-noshorthands]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{listings}
+\usetikzlibrary{positioning,arrows.meta,fit}
+
+% ---------------------------------------------------------------- tema -------
+\usetheme{Madrid}
+\usecolortheme{whale}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{caption}[numbered]
+\setbeamerfont{frametitle}{size=\large}
+\setbeamerfont{block title}{size=\small}
+
+% ALTERNATIVA METROPOLIS (descomentar las dos líneas y comentar las tres de arriba)
+% \usetheme[numbering=fraction, progressbar=frame]{metropolis}
+% \setbeamertemplate{frame footer}{Reunión de avance · UIS · 13-nov-2026}
+
+% ------------------------------------------------------------- colores -------
+\definecolor{verde}{RGB}{0,120,60}
+\definecolor{rojo}{RGB}{175,30,30}
+\definecolor{naranja}{RGB}{200,110,0}
+\definecolor{gris}{RGB}{95,95,95}
+
+\newcommand{\si}{\textcolor{verde}{$\checkmark$}}
+\newcommand{\no}{\textcolor{rojo}{$\times$}}
+\newcommand{\parc}{\textcolor{naranja}{$\sim$}}
+\newcommand{\cod}[1]{\texttt{\small #1}}
+
+\lstset{
+  language=C++,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{blue!60!black}\bfseries,
+  commentstyle=\color{gris}\itshape,
+  stringstyle=\color{verde},
+  showstringspaces=false,
+  columns=flexible,
+  breaklines=true,
+  frame=none,
+  aboveskip=2pt, belowskip=2pt
+}
+
+% --------------------------------------------------------------- título ------
+\title[Framework FVM para Euler]{Framework computacional de volúmenes finitos\\
+para las ecuaciones de Euler}
+\subtitle{Reunión de avance: estado real del software, hoja de ruta y decisiones técnicas}
+\author[Chavarro · Ariza]{Gabriel Antonio Chavarro Avellaneda \and Edgar Santiago Ariza Garcia}
+\institute[UIS]{Escuela de Ingeniería de Sistemas e Informática\\Universidad Industrial de Santander}
+\date{13 de noviembre de 2026}
+
+\begin{document}
+
+% =============================================================================
+\begin{frame}[plain]
+  \titlepage
+  \begin{center}
+    \small
+    \textbf{Director:} Dr. Jorge Villamizar Morales\\
+    \textbf{Codirectores:} Ph.D. Lola Xiomara Bautista Rozo · M.Sc. Oswaldo Alonso Nieto Narváez
+  \end{center}
+\end{frame}
+
+% =============================================================================
+\begin{frame}{Qué pedimos de esta reunión}
+
+  \begin{block}{Tres cosas, en este orden}
+    \begin{enumerate}
+      \item \textbf{Validar el estado real} del software: qué existe, qué no, y
+            con qué evidencia lo afirmamos.
+      \item \textbf{Confirmar la hoja de ruta} hasta cerrar el alcance comprometido.
+      \item \textbf{Cerrar doce decisiones técnicas} que condicionan el código que
+            escribiremos las próximas semanas.
+    \end{enumerate}
+  \end{block}
+
+  \begin{alertblock}{Regla de la reunión}
+    Separaremos siempre tres cosas distintas: lo \textbf{verificado en código},
+    nuestra \textbf{recomendación como ingenieros de sistemas}, y lo que queda
+    \textbf{pendiente de su criterio}. No queremos que una recomendación nuestra
+    quede en el acta como decisión suya.
+  \end{alertblock}
+
+  \begin{center}
+    \small\color{gris}
+    Todas las cifras de esta presentación se midieron el 12 de noviembre de 2026
+    y son reproducibles con cuatro comandos.
+  \end{center}
+\end{frame}
+
+% =============================================================================
+\begin{frame}{Agenda}
+  \tableofcontents
+\end{frame}
+
+% #############################################################################
+\section{Lo que tenemos hoy}
+% #############################################################################
+
+\begin{frame}[shrink]{El estado del software en nueve cifras}
+  \centering
+  \small
+  \begin{tabular}{@{}lr@{}}
+    \toprule
+    \textbf{Métrica} & \textbf{Valor} \\
+    \midrule
+    Cabeceras públicas (\cod{include/euler1d/})      & 24 \cod{.hpp} \\
+    Unidades de implementación                        & 17 \cod{.cpp} \\
+    Líneas de C++ (núcleo + tests)                    & $\approx$ 4\,010 \\
+    \midrule
+    Casos de prueba bajo CTest                        & \textbf{87} en 6 ejecutables \\
+    Resultado de CTest \emph{hoy}                     & \textbf{6/6 Passed · 0 fallos · 9{,}57 s} \\
+    Advertencias de compilación                       & \textbf{0} \\
+    \midrule
+    Regresión contra el Fortran                       & \textbf{26/26} en tolerancia \\
+    Pasos temporales frente al Fortran                & \textbf{idénticos} en los 26 \\
+    Dependencias externas obligatorias                & \textbf{ninguna} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.6em}
+  \begin{block}{Punto de partida}
+    \small
+    \cod{euler1d.f90}: \textbf{555 líneas}, 13 subrutinas internas compartiendo
+    por visibilidad léxica los arrays \cod{U}, \cod{U1}, \cod{U2}, \cod{W},
+    \cod{Fnum}, \cod{x} y todo el módulo global \cod{global\_numbers}.
+  \end{block}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Dónde vive cada cosa}
+  \small
+  \begin{block}{Dos repositorios, roles distintos}
+    \begin{itemize}
+      \item \cod{Euler1D\_Cpp} — \textbf{el núcleo de grado}. Framework C++,
+            CMake, suite de 87 casos, laboratorio.
+      \item \cod{Code\_Euler1D} — \textbf{oráculo Fortran} de regresión,
+            documentación académica y el plan en LaTeX.
+    \end{itemize}
+  \end{block}
+
+  \begin{alertblock}{Dos hallazgos de higiene que conviene atender}
+    \begin{itemize}
+      \item El prototipo de laboratorio (\cod{tools/fvlab\_lab/}) y
+            \cod{docs/mvp\_plan.md} \textbf{están sin commitear}. Hoy ese trabajo
+            no tiene respaldo.
+      \item El repositorio remoto se llama \cod{Explicacion-de-Code\_Euler1} y el
+            namespace es \cod{euler1d::}. Al entrar el 2D, los dos nombres quedan
+            incorrectos (\cod{ADR-001} propone \textbf{FVLab} / \cod{fvlab}).
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Inventario real: las cinco interfaces con alternativas}
+  \centering
+  \scriptsize
+  \begin{tabular}{@{}llcl@{}}
+    \toprule
+    \textbf{Interfaz} & \textbf{Implementaciones hoy} & & \textbf{Falta} \\
+    \midrule
+    \cod{Reconstruction}   & \cod{MusclReconstruction}                    & \parc & \cod{FirstOrder} como clase; \cod{Weno} \\
+    \cod{RiemannSolver}    & \cod{Hll} (Davis), \cod{Hllc}                & \si   & \cod{Hlle} (Roe + Einfeldt) \\
+    \cod{TimeIntegrator}   & \cod{SspRk2} (Heun), \cod{ForwardEuler}      & \si   & SSP-RK3 si se exige orden 3 \\
+    \cod{BoundaryCondition}& \cod{Transmissive}, \cod{Periodic}, \cod{Reflective} & \si & versión 2D por borde \\
+    \cod{DivergenceOperator}& \cod{Cartesian}, \cod{Radial}               & \si   & versión 2D sin separación \\
+    \cod{SourceTerm}       & \cod{GravitySource}                          & \si   & --- (fuera de alcance) \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.5em}
+  \scriptsize
+  Limitadores en \cod{slope\_limiter.hpp}: \cod{fo}, \cod{mm} (minmod),
+  \cod{vl} (van Leer), \cod{mc} (monotonized central), \cod{sb} (superbee).
+
+  \vspace{0.5em}
+  \begin{alertblock}{El matiz que hay que decir en voz alta}
+    \scriptsize
+    El orden 1 funciona como \emph{opción de limitador} (pendiente nula), no como
+    módulo independiente. El resultado numérico es correcto y está probado, pero
+    el OE2 pide «módulos concretos para al menos dos reconstructores».
+    Extraerlo es trabajo de horas y deja preparado el hueco donde entra WENO.
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Arquitectura implementada hoy}
+  \centering
+  \begin{tikzpicture}[
+      font=\scriptsize,
+      caja/.style={draw, rounded corners=1.5pt, align=center, inner sep=2.5pt,
+                   minimum height=6mm, fill=blue!5},
+      iface/.style={caja, fill=blue!12, text width=19mm},
+      impl/.style={draw, align=center, inner sep=2pt, text width=19mm,
+                   font=\tiny, fill=white},
+      flecha/.style={-{Stealth[length=1.6mm]}, gris}
+    ]
+
+    % --- nivel 1: orquestación -------------------------------------------
+    \node[caja, text width=16mm] (main) {\cod{main.cpp}};
+    \node[caja, right=3mm of main, text width=38mm, fill=blue!15]
+      (sim) {\textbf{Simulation} \;«Facade»\\ \tiny compone y controla; sin fórmulas};
+    \node[caja, right=5mm of sim, text width=36mm, fill=orange!10]
+      (aux) {\tiny \cod{CflController} · \cod{OutputManager}\\
+             \tiny \cod{ExactRiemannSolver}\\
+             \tiny (referencia; \textbf{no} avanza el fluido)};
+
+    % --- nivel 2: avance temporal ----------------------------------------
+    \node[caja, below=7mm of main.south west, anchor=north west, text width=24mm]
+      (ti) {\cod{TimeIntegrator}\\ \tiny SspRk2 / ForwardEuler};
+    \node[iface, right=4mm of ti, text width=34mm]
+      (sdo) {\cod{SemiDiscreteOperator}\\ \tiny $u_{out}=u_{in}+\Delta t\,L(u_{in})$};
+    \node[caja, right=4mm of sdo, text width=36mm, fill=blue!20]
+      (fvo) {\textbf{FiniteVolumeOperator}\\ \tiny único punto que conoce las 5 interfaces};
+
+    % --- nivel 3: los cinco puntos de variación --------------------------
+    \node[iface, below=8mm of ti.south west, anchor=north west] (rec) {\cod{Reconstruction}};
+    \node[iface, right=3mm of rec] (rs)  {\cod{RiemannSolver}};
+    \node[iface, right=3mm of rs]  (div) {\cod{Divergence}};
+    \node[iface, right=3mm of div] (src) {\cod{SourceTerm}};
+    \node[iface, right=3mm of src] (bc)  {\cod{Boundary}};
+
+    \node[impl, below=1.2mm of rec] {Muscl$\langle$Lim$\rangle$ \si\\ FirstOrder \parc\\ \textbf{Weno} \no};
+    \node[impl, below=1.2mm of rs]  {Hll (Davis) \si\\ Hllc \si\\ \textbf{Hlle} \no};
+    \node[impl, below=1.2mm of div] {Cartesian \si\\ Radial \si\\ \textbf{Unsplit2D} \no};
+    \node[impl, below=1.2mm of src] {Gravity \si\\ \textcolor{white}{.}\\ \textcolor{white}{.}};
+    \node[impl, below=1.2mm of bc]  {Transmissive \si\\ Periodic \si\\ Reflective \si};
+
+    \draw[flecha] (main) -- (sim);
+    \draw[flecha] (sim) -- (aux);
+    \draw[flecha] (sim.south) -- ++(0,-3mm) -| (ti.north);
+    \draw[flecha] (ti) -- (sdo);
+    \draw[flecha] (sdo) -- (fvo);
+    \draw[flecha] (fvo.south) -- ++(0,-4mm) -| (rec.north);
+    \draw[flecha] (fvo.south) -- ++(0,-4mm) -| (rs.north);
+    \draw[flecha] (fvo.south) -- ++(0,-4mm) -| (div.north);
+    \draw[flecha] (fvo.south) -- ++(0,-4mm) -| (src.north);
+    \draw[flecha] (fvo.south) -- ++(0,-4mm) -| (bc.north);
+  \end{tikzpicture}
+
+  \vspace{0.3em}
+  {\scriptsize \si\ implementado \quad \parc\ existe pero no como módulo \quad \no\ pendiente}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{La frase que resume el diagrama}
+
+  \begin{block}{Concentración de los puntos de variación}
+    Hay exactamente \textbf{cinco interfaces} con implementaciones alternativas y
+    \textbf{todas} se invocan desde un solo componente,
+    \cod{FiniteVolumeOperator}.
+  \end{block}
+
+  \begin{exampleblock}{Por qué importa para la tesis}
+    Esa concentración es lo que hace que \emph{añadir un esquema no toque el
+    núcleo}. Y es precisamente la afirmación que el \textbf{OE1} tiene que
+    demostrar \textbf{con un número}:
+
+    \begin{center}
+      \textit{archivos del núcleo modificados al añadir HLLE} $\;=\;$ \textbf{?}
+    \end{center}
+
+    Si el número es cero, hay evidencia. Si no, el diseño necesita revisión, y es
+    mucho mejor saberlo ahora que en la defensa.
+  \end{exampleblock}
+
+  \begin{center}
+    \small\color{gris}
+    Por eso HLLE está arriba en la hoja de ruta: cuesta poco y produce la única
+    medición que convierte el OE1 en un resultado.
+  \end{center}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[fragile]{Strategy con granularidad de \emph{barrido}, no de celda}
+
+  \begin{lstlisting}
+virtual void computeFluxes(const std::vector<PrimitiveState>& q_left,
+                           const std::vector<PrimitiveState>& q_right,
+                           std::vector<FluxVector>& out) const = 0;
+  \end{lstlisting}
+
+  \begin{columns}[t]
+    \begin{column}{0.5\textwidth}
+      \begin{block}{Consecuencia}
+        \small
+        \textbf{$\approx$ 5 llamadas virtuales por paso temporal} (una por etapa
+        de Runge-Kutta y por interfaz). Dentro, bucle plano y vectorizable.
+      \end{block}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{block}{Y además}
+        \small
+        Cada solver expone \cod{flux(qL,qR)} para \emph{una} cara: legible y
+        comparable con la fórmula de Toro. Un test comprueba que los dos caminos
+        coinciden.
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \begin{exampleblock}{Los limitadores van un paso más allá}
+    \small
+    Son \textbf{tipos-política} con métodos estáticos, instanciados por plantilla.
+    El Fortran hacía \cod{select case (trim(limiter))} \emph{dentro} del bucle
+    sobre celdas y componentes: una comparación de cadenas por celda. Aquí el
+    coste es \textbf{cero}.
+  \end{exampleblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Tres defectos del original que el diseño corrige}
+  \small
+
+  \begin{block}{1 · Dependencia implícita sobre estado global}
+    \cod{rhs\_fv(Uin, Uout)} recibía \cod{Uin} como argumento pero
+    \textbf{reconstruía leyendo el array global \cod{W}}. Pasar un \cod{Uin} no
+    sincronizado evaluaba el operador en un estado distinto del pedido, sin aviso.
+    \\[2pt]
+    \textbf{Hoy:} \cod{w} es un parámetro de \cod{applyUpdate}. La obligación está
+    en la firma y no se puede olvidar.
+  \end{block}
+
+  \begin{block}{2 · \emph{Aliasing} ilegal en el integrador}
+    El Fortran llamaba \cod{rhs\_fv(U1, U1)}: el mismo array como \cod{intent(in)}
+    e \cod{intent(out)}. Comportamiento indefinido.
+    \\[2pt]
+    \textbf{Hoy:} \cod{SspRk2} usa dos destinos separados.
+  \end{block}
+
+  \begin{block}{3 · Geometría tratada como término fuente}
+    La forma $-(\alpha/r)F$ \textbf{no conserva}: según la auditoría, el arranque
+    del Sedov inyectaba un \textbf{42\,\% de energía espuria}.
+    \\[2pt]
+    \textbf{Hoy:} \cod{RadialDivergence} con áreas $A=r^{\alpha}$, volumen exacto
+    y término geométrico de presión $p(A_+-A_-)/V$.
+  \end{block}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[fragile]{Cómo se compila y cómo se configura}
+
+  \begin{columns}[t]
+    \begin{column}{0.52\textwidth}
+      \begin{block}{Compilación}
+\begin{lstlisting}[language={}, keywordstyle=\color{black}]
+cmake -S . -B build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build
+\end{lstlisting}
+        \scriptsize
+        CMake $\ge$ 3.20, C++20 (ver R-1), GCC/MSYS2 UCRT64.
+        Sin dependencias externas.
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Configuración sin recompilar}
+\begin{lstlisting}[language={}, keywordstyle=\color{black}]
+&euler
+ test = 1
+ N = 400
+ cfl = 0.9
+ gamma = 1.4
+ limiter = 'vl'
+ solver = 'hllc'
+/
+\end{lstlisting}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \begin{alertblock}{Dos decisiones deliberadas}
+    \scriptsize
+    \textbf{Prohibido \cod{-ffast-math}} (\cod{ADR-003}): reasociaría las
+    operaciones en coma flotante y rompería la equivalencia con el Fortran, que es
+    el criterio de aceptación.
+    \\[2pt]
+    \textbf{Una clave desconocida aborta con error.} Ninguna opción inválida
+    selecciona otro algoritmo en silencio, que era el fallo concreto del original.
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Los ocho casos que ya corren}
+  \centering
+  \scriptsize
+  \begin{tabular}{@{}clccl@{}}
+    \toprule
+    \cod{test} & \textbf{Problema} & $x_0$ & $t_f$ & \textbf{Impone} \\
+    \midrule
+    1 & Sod \emph{modificado}, rarefacción sónica (Toro 4.1) & 0.3 & 0.2 & --- \\
+    2 & «123»: dos rarefacciones, casi vacío & 0.5 & 0.15 & --- \\
+    3 & Blast izquierdo (Woodward--Colella) & 0.5 & 0.012 & --- \\
+    4 & Colisión de dos choques & 0.4 & 0.035 & --- \\
+    5 & Test 3 desplazado: \textbf{contacto casi estacionario} & 0.8 & 0.012 & --- \\
+    6 & Onda de entropía suave (convergencia) & --- & 1.0 & \cod{bc='per'} \\
+    7 & Atmósfera hidrostática isoterma & --- & 10.0 & \cod{bc='refl'}, \cod{grav=1} \\
+    8 & Sedov--Taylor esférico & --- & 0.5 & \cod{alpha\_geo=2} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.7em}
+  \begin{alertblock}{Hueco frente al OE3}
+    \small
+    El OE3 pide «incluyendo el \textbf{problema de Sod} como caso de referencia
+    base». El test 1 es el Sod \emph{modificado} de Toro, con $u_L = 0.75$.
+    El Sod clásico ($u_L=u_R=0$) y el problema de Lax \textbf{no existen todavía}:
+    son dos entradas en una tabla, trabajo de horas (fase F3).
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{La suite: 87 casos, verdes hoy}
+  \begin{columns}[t]
+    \begin{column}{0.5\textwidth}
+      \centering\scriptsize
+      \begin{tabular}{@{}lr@{}}
+        \toprule
+        \textbf{Ejecutable} & \textbf{Casos} \\
+        \midrule
+        \cod{test\_physics}       & 15 \\
+        \cod{test\_numerics}      & 21 \\
+        \cod{test\_exact\_riemann}& 12 \\
+        \cod{test\_config}        & 25 \\
+        \cod{test\_integration}   & 12 \\
+        \cod{test\_regression}    & \phantom{0}2 \\
+        \midrule
+        \textbf{Total}            & \textbf{87} \\
+        \bottomrule
+      \end{tabular}
+
+      \vspace{0.5em}
+      \scriptsize Arnés propio (\cod{test\_support.hpp}, 110 líneas), sin
+      dependencias externas.
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{block}{\cod{ctest} del 12-nov-2026, Release}
+        \scriptsize
+        \begin{tabular}{@{}llr@{}}
+          1/6 & \cod{test\_physics}        & Passed \\
+          2/6 & \cod{test\_numerics}       & Passed \\
+          3/6 & \cod{test\_exact\_riemann} & Passed \\
+          4/6 & \cod{test\_config}         & Passed \\
+          5/6 & \cod{test\_integration}    & Passed \\
+          6/6 & \cod{test\_regression}     & Passed \\
+          \multicolumn{3}{@{}l}{\textbf{100\% · 0 fallos · 9{,}57 s}}
+        \end{tabular}
+      \end{block}
+      \begin{alertblock}{Salvaguarda de no circularidad}
+        \scriptsize
+        \cod{tests/reference/} contiene \emph{solo} salidas del Fortran. Lo que
+        produce el C++ va a \cod{tests/baseline/} y \textbf{nunca} se llama
+        «referencia» (\cod{ADR-013}).
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Resultado 1 · Equivalencia con el Fortran}
+
+  \begin{block}{Campaña completa}
+    \small
+    \textbf{26 de 26} configuraciones dentro de tolerancia, con el número de pasos
+    temporales \textbf{idéntico} en todas. 9 de 13 corridas archivadas son
+    idénticas \textbf{byte a byte}.
+  \end{block}
+
+  \begin{exampleblock}{Corrida en vivo de hoy — caso 1, $N=400$, HLLC + van Leer}
+    \centering\scriptsize
+    \begin{tabular}{@{}lccc@{}}
+      \toprule
+      \textbf{Archivo} & $\max|d|$ & $L_1$ & $L_2$ \\
+      \midrule
+      \cod{rho\_1.xl}       & 0.000e+00 & 0.000e+00 & 0.000e+00 \\
+      \cod{vel\_1.xl}       & 0.000e+00 & 0.000e+00 & 0.000e+00 \\
+      \cod{press\_1.xl}     & 0.000e+00 & 0.000e+00 & 0.000e+00 \\
+      \cod{rho\_exact.xl}   & 0.000e+00 & 0.000e+00 & 0.000e+00 \\
+      \cod{vel\_exact.xl}   & 0.000e+00 & 0.000e+00 & 0.000e+00 \\
+      \cod{press\_exact.xl} & 0.000e+00 & 0.000e+00 & 0.000e+00 \\
+      \bottomrule
+    \end{tabular}
+
+    \vspace{0.3em}
+    \scriptsize 245 pasos · $p^*=4.662936\times10^{-1}$ · $u^*=1.360906$
+  \end{exampleblock}
+
+  \begin{center}
+    \small
+    \textbf{Cero}, no «pequeño»: coincidencia byte a byte en las seis variables.
+  \end{center}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Resultado 2 · Orden de convergencia observado}
+
+  \centering
+  \small
+  Caso 6 (onda de entropía suave) · MUSCL + van Leer + HLLC · CFL 0.9 · densidad
+
+  \vspace{0.4em}
+  \begin{tabular}{@{}rcccc@{}}
+    \toprule
+    $N$ & $L_1$ & $p_{obs}(L_1)$ & $L_2$ & $p_{obs}(L_2)$ \\
+    \midrule
+     50 & $3.1197\times10^{-3}$ & ---            & $3.7179\times10^{-3}$ & --- \\
+    100 & $8.3188\times10^{-4}$ & 1.907          & $1.1137\times10^{-3}$ & 1.739 \\
+    200 & $2.0866\times10^{-4}$ & 1.995          & $3.3030\times10^{-4}$ & 1.754 \\
+    400 & $5.2186\times10^{-5}$ & \textbf{1.999} & $9.8093\times10^{-5}$ & 1.752 \\
+    800 & $1.2904\times10^{-5}$ & \textbf{2.016} & $2.9291\times10^{-5}$ & 1.744 \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.6em}
+  \begin{columns}[t]
+    \begin{column}{0.48\textwidth}
+      \begin{exampleblock}{En $L_1$: orden 2 limpio}
+        \scriptsize
+        Satisface con holgura el criterio propuesto
+        $p_{obs} \ge 0.9\,p_{\text{teórico}}$.
+      \end{exampleblock}
+    \end{column}
+    \begin{column}{0.52\textwidth}
+      \begin{alertblock}{El matiz que no escondemos}
+        \scriptsize
+        En $L_2$ el orden se estanca en $\approx 1.75$. Es el recorte del limitador
+        en los extremos del perfil, donde van Leer baja a primer orden; $L_2$ pesa
+        esos puntos más que $L_1$.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  {\small\textbf{Pregunta para los codirectores:} ¿reportamos $p_{obs}$ en $L_1$,
+   en $L_2$, o en ambas con la explicación? Proponemos \textbf{ambas}.}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Resultado 3 · Aislamiento del efecto del solver}
+
+  \centering
+  \small
+  Mismo caso · $N=400$ · van Leer · CFL 0.9 · SSP-RK2.
+  \textbf{La única variable es el solver de Riemann.}
+
+  \vspace{0.4em}
+  \begin{tabular}{@{}llccc@{}}
+    \toprule
+    \textbf{Caso} & \textbf{Solver} & $L_1(\rho)$ & $L_2(\rho)$ & \textbf{Mejora} \\
+    \midrule
+    Sod modificado (1) & HLL  & $2.4390\times10^{-3}$ & $1.2181\times10^{-2}$ & --- \\
+                       & HLLC & $2.3840\times10^{-3}$ & $1.2166\times10^{-2}$ & 2{,}3\,\% \\
+    \midrule
+    «123» (2)          & HLL  & $4.6338\times10^{-3}$ & $6.7571\times10^{-3}$ & --- \\
+                       & HLLC & $4.6274\times10^{-3}$ & $6.7493\times10^{-3}$ & 0{,}1\,\% \\
+    \midrule
+    \textbf{Contacto casi}  & HLL  & $3.4922\times10^{-2}$ & $2.2476\times10^{-1}$ & --- \\
+    \textbf{estacionario (5)} & \textbf{HLLC} & $\mathbf{1.3536\times10^{-2}}$ & $\mathbf{1.1699\times10^{-1}}$ & \textbf{factor 2{,}58} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.6em}
+  \begin{exampleblock}{Lectura física — y el resultado presentable}
+    \small
+    HLL y HLLC son \textbf{indistinguibles} cuando no hay contacto que resolver
+    ($<2{,}5\,\%$). HLLC reduce el error \textbf{un factor 2,58 en $L_1$} justo en
+    el caso diseñado para aislar la onda de contacto.
+    \\[3pt]
+    El framework no solo corre: \textbf{mide el efecto del componente que se
+    intercambia}, con todo lo demás fijo. Esa es la celda mínima del banco de
+    pruebas, y ya existe en 1D.
+  \end{exampleblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Resultado 4 · Positividad y el laboratorio pedagógico}
+
+  \begin{columns}[t]
+    \begin{column}{0.47\textwidth}
+      \begin{exampleblock}{Positividad sin pisos (caso 2)}
+        \scriptsize
+        El caso de casi vacío, $p^* = 1.894\times10^{-3}$. De su
+        \cod{run\_info.txt} de hoy:
+        \begin{center}
+          \cod{floor\_rho\_hits = 0}\\
+          \cod{floor\_p\_hits = 0}\\
+          \cod{exact\_residual = 8.882e-16}
+        \end{center}
+        Las velocidades de \textbf{Davis} preservan la positividad
+        \textbf{sin disparar ningún piso}. Dato relevante para la decisión D-3.
+      \end{exampleblock}
+    \end{column}
+    \begin{column}{0.53\textwidth}
+      \begin{block}{Laboratorio \cod{tools/fvlab\_lab/} (prototipo)}
+        \scriptsize
+        Tkinter + matplotlib, $\approx$ 50 KB en 7 módulos. Materializa el ciclo
+        \textbf{aprender $\to$ modificar $\to$ ejecutar $\to$ ver $\to$ comparar
+        $\to$ entender}.
+        \\[3pt]
+        \textbf{La GUI no contiene HLL, HLLC ni MUSCL.} Lanza \cod{xEuler1D} y
+        pinta los \cod{.xl} (MVP-02, MVP-03). Cero cambios en fórmulas numéricas
+        para integrarla (MVP-04).
+        \\[3pt]
+        Eso la mantiene \emph{fuera} del camino crítico de verificación, y es
+        deliberado.
+      \end{block}
+      \begin{alertblock}{Pendiente de su criterio (R-5)}
+        \scriptsize
+        ¿Cuenta como contribución evaluable del \textbf{OE4} o es material de
+        apoyo? Hoy no está comprometido en ningún objetivo.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Lo que NO existe todavía}
+
+  \centering\scriptsize
+  \begin{tabular}{@{}llc@{}}
+    \toprule
+    \textbf{Elemento} & \textbf{Dónde está prometido} & \textbf{Estado} \\
+    \midrule
+    Euler \textbf{2D}                & pregunta de investigación, OE2, OE3, metodología & \no \\
+    \textbf{HLLE} (Roe + Einfeldt)   & OE2, Cuadro 3.1 \; (hoy hay HLL con \textbf{Davis}) & \no \\
+    \textbf{WENO}                    & OE2 («orden 3+»), Gantt & \no \\
+    \textbf{JSON / YAML}             & §4.4 \; (hoy namelist Fortran) & \no \\
+    \textbf{GoogleTest / Catch2}     & §5.2 \; (hoy arnés propio) & \no \\
+    \textbf{VTK / ParaView}          & §5.3 \; (hoy \cod{.xl} + matplotlib) & \no \\
+    Sod \emph{clásico} y Lax         & OE3 & \no \\
+    Reflexión de Mach                & metodología, Etapa 3 & \no \\
+    Integración continua             & no está en los OE, pero verifica 4 NFR & \no \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.7em}
+  \begin{alertblock}{Por qué abrimos esta diapositiva nosotros}
+    \small
+    El marco teórico del plan radicado afirma en algunos puntos que el framework
+    «\textbf{implementa}» WENO, HLLE, JSON, GoogleTest y VTK. \textbf{No es cierto
+    hoy}, y preferimos decirlo nosotros antes de que lo pregunte un evaluador.
+    Esta tabla \emph{es} la hoja de ruta del Bloque 2.
+  \end{alertblock}
+\end{frame}
+
+% #############################################################################
+\section{Hacia dónde vamos}
+% #############################################################################
+
+\begin{frame}[shrink]{Criterio de ordenación: riesgo, no tamaño}
+
+  \begin{block}{Tres reglas gobiernan el orden de los hitos}
+    \begin{enumerate}
+      \item \textbf{Primero lo que puede invalidar el diseño.} El \emph{spike} de
+            dimensionalidad va \textbf{antes} de escribir 2D: si falla, cambiar de
+            estrategia cuesta mucho menos con cero líneas de 2D escritas que con
+            tres mil.
+      \item \textbf{Un resultado publicable lo antes posible.} La matriz de
+            comparación 1D llega a mitad del camino. Desde ahí existe algo que
+            responde la pregunta de investigación, aunque el 2D no esté.
+      \item \textbf{Lo barato y visible antes que lo caro.} HLLE cuesta poco y
+            cierra dos huecos. WENO cuesta mucho y \textbf{no toca la pregunta de
+            investigación}, que es sobre solvers de Riemann.
+    \end{enumerate}
+  \end{block}
+
+  \begin{exampleblock}{Consecuencia práctica}
+    \small
+    \textbf{Cinco de los seis hitos de la ruta crítica no están bloqueados} por
+    ninguna decisión pendiente. Si hoy nos quedamos sin tiempo, lo imprescindible
+    es cerrar \textbf{A-1}, \textbf{A-2} y la \textbf{fórmula de CFL 2D}.
+  \end{exampleblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Fases F1--F7 · del estado actual al primer resultado}
+  \centering\scriptsize
+  \begin{tabular}{@{}clp{58mm}@{}}
+    \toprule
+    & \textbf{Fase} & \textbf{Criterio de cierre} \\
+    \midrule
+    F1 & Cierre de decisiones \emph{(hoy)} & Doce puntos registrados en \cod{decision\_log.md} \\
+    \midrule
+    F2 & Infraestructura y rigor & CI de 5 trabajos en verde; C++17; renombrado a \cod{fvlab}; determinismo byte a byte. \textbf{La regresión no cambia} \\
+    \midrule
+    F3 & Huecos baratos & \cod{FirstOrderReconstruction} como clase; Sod clásico y Lax. Prueba clave: idéntico al limitador \cod{fo} \\
+    \midrule
+    \textbf{F4} & \textbf{HLLE + medición del acoplamiento} & HLLE seleccionable por configuración, con convergencia verificada, \textbf{y el número de archivos del núcleo tocados registrado} \\
+    \midrule
+    F5 & Adaptadores config./salida & JSON y CSV conservando namelist y \cod{.xl}; prueba de equivalencia entre formatos \\
+    \midrule
+    \textbf{F6} & \textbf{Matriz de comparación 1D} & Tabla y figura que aíslan el efecto del solver, con $L_1$, $L_2$ y anchura del contacto en celdas \\
+    \midrule
+    \textbf{F7} & \textbf{\emph{Spike} de dimensionalidad} & Un día acotado. Plantillar con $N_T=0$ únicamente. Éxito $=$ suite verde \textbf{y} regresión intacta \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.4em}
+  {\scriptsize F4 es el hito de \textbf{mayor valor por unidad de esfuerzo}.
+   F7 es el de \textbf{mayor riesgo}.}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Fases F8--F14 · dos dimensiones y cierre}
+  \centering\scriptsize
+  \begin{tabular}{@{}clp{58mm}@{}}
+    \toprule
+    & \textbf{Fase} & \textbf{Contenido y riesgo} \\
+    \midrule
+    F8 & Núcleo 2D & \cod{Mesh2D}, \cod{CellField2D} con fantasmas configurables, fronteras por borde, EOS multicomponente, \textbf{segunda fórmula de CFL}. \emph{Riesgo: las esquinas} \\
+    \midrule
+    F9 & Operador 2D y Lax--Liu & Reconstrucción direccional, rotación en el barrido, divergencia \textbf{sin separación}. Prueba más sensible: \textbf{transposición $x\leftrightarrow y$ con $u\leftrightarrow v$} a nivel de redondeo \\
+    \midrule
+    F10 & Salida VTK & ParaView abre el archivo sin conversión intermedia \\
+    \midrule
+    F11 & WENO \emph{(condicional a A-2)} & $p_{obs}\ge 0.9\times 3$ medido y sin oscilaciones cerca de discontinuidades \\
+    \midrule
+    F12 & Validación y matriz 2D & Lax--Liu contra la literatura; simetría radial; reflexión de Mach si B-2 lo confirma \\
+    \midrule
+    F13 & Documentación pedagógica & \textbf{Prueba de reproducibilidad desde cero}: instalar y simular siguiendo solo la documentación, sin intervención de los autores \\
+    \midrule
+    F14 & Cierre de tesis & Cada requisito trazable; cada figura etiquetada con el commit que la produjo \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Ruta crítica}
+  \centering
+  \begin{tikzpicture}[font=\small, node distance=6mm,
+      h/.style={draw, rounded corners=2pt, minimum height=7mm, minimum width=11mm, fill=blue!10},
+      hc/.style={h, fill=blue!30, very thick},
+      fl/.style={-{Stealth[length=2mm]}}]
+    \node[h]  (f2) {F2};
+    \node[h, right=of f2]  (f3) {F3};
+    \node[hc, right=of f3] (f4) {F4};
+    \node[hc, right=of f4] (f6) {F6};
+    \node[right=4mm of f6, align=left] (r1) {\scriptsize \textbf{primer resultado}\\\scriptsize \textbf{publicable (1D)}};
+
+    \node[hc, below=10mm of f4] (f7) {F7};
+    \node[h, right=of f7] (f8) {F8};
+    \node[h, right=of f8] (f9) {F9};
+    \node[h, right=of f9] (f12){F12};
+    \node[right=4mm of f12, align=left] (r2) {\scriptsize \textbf{dos dimensiones}};
+
+    \draw[fl] (f2)--(f3); \draw[fl] (f3)--(f4); \draw[fl] (f4)--(f6);
+    \draw[fl] (f4)--(f7); \draw[fl] (f7)--(f8); \draw[fl] (f8)--(f9); \draw[fl] (f9)--(f12);
+
+    \node[draw, dashed, rounded corners, below=10mm of f3, text width=22mm, align=center, font=\scriptsize]
+      (off) {F5 · F10 · F11\\ fuera de la ruta crítica};
+  \end{tikzpicture}
+
+  \vspace{0.5em}
+  \begin{columns}[t]
+    \begin{column}{0.5\textwidth}
+      \begin{exampleblock}{Mayor valor por esfuerzo: F4}
+        \scriptsize
+        Cierra el hueco de la pregunta de investigación, es pequeño, y produce la
+        única medición que convierte el OE1 en un resultado.
+      \end{exampleblock}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{alertblock}{Mayor riesgo: F7}
+        \scriptsize
+        Es el único hito que puede obligar a cambiar de estrategia. Por eso está
+        acotado a un día y colocado \textbf{antes} de que exista código 2D que
+        perder.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Módulo integrado de verificación y validación}
+  \centering\scriptsize
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    \textbf{Capacidad} & \textbf{Hoy} & \textbf{Objetivo} \\
+    \midrule
+    $L_1$, $L_2$ por variable          & \si\ \cod{compareFields}, \cod{euler1d\_compare} & reporte automático por corrida \\
+    Orden $p_{obs}$                     & \parc\ script \emph{ad hoc} & integrado y con pruebas \\
+    Anchura del contacto en celdas      & \no & métrica propia, con prueba \\
+    Exportación CSV                     & \no\ (hoy \cod{.xl}) & \si\ (C-4) \\
+    Exportación VTK                     & \no & \si\ 2D (C-4) \\
+    Positividad / pisos                 & \si\ \cod{floor\_*\_hits} en \cod{run\_info.txt} & criterio de aceptación explícito \\
+    Conservación discreta               & \si\ probada en la suite & reportada por corrida \\
+    Simetría radial 2D                  & \no & métrica de \cod{fig\_euler2d.py}, con prueba \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.7em}
+  \begin{alertblock}{Nota terminológica para cerrar con los codirectores (R-4)}
+    \small
+    El plan usa «validar» para la comparación contra el Riemann exacto. Según
+    \textbf{Oberkampf y Roy (2010)} —que el propio plan cita— eso es
+    \textbf{verificación}. Propuesta: \emph{verificación} en 1D (solución exacta) y
+    \emph{validación} en 2D (referencia publicada), con nota al pie. Es gratis y
+    quita una pregunta de la defensa.
+  \end{alertblock}
+\end{frame}
+
+% #############################################################################
+\section{Decisiones técnicas}
+% #############################################################################
+
+\begin{frame}[shrink]{D-1 · Polimorfismo dinámico vs. estático}
+  \centering\scriptsize
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    & \textbf{A — interfaces virtuales (actual)} & \textbf{B — \cod{std::variant} / CRTP} \\
+    \midrule
+    Coste en ejecución    & $\approx$ 5 llamadas virtuales por paso & 0 \\
+    Legibilidad           & alta: se lee como la fórmula de Toro & baja: \cod{std::visit}, plantillas \\
+    Inyección por config. & trivial (\cod{unique\_ptr} desde la fábrica) & conjunto de tipos cerrado \\
+    Añadir HLLE           & una clase nueva & \textbf{modificar el \cod{variant}} $=$ tocar el núcleo \\
+    Cumple §4.2           & sí, literalmente & requiere explicación \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.6em}
+  \begin{exampleblock}{Nuestra recomendación: A (ya registrada en \cod{architecture.md} §12.7)}
+    \small
+    El \emph{overhead} que B elimina son \textbf{cinco llamadas indirectas por
+    paso}. Para dimensionarlo: una malla $400^2$ tiene $\sim$320\,800 caras. Con
+    granularidad de \emph{celda}, B sería obligatorio; con granularidad de
+    \emph{barrido}, lo que ahorra es 5.
+    \\[3pt]
+    Y pesa más que el rendimiento: con \cod{std::variant}, añadir HLLE obliga a
+    modificar un archivo del núcleo. \textbf{B nos haría más difícil demostrar la
+    tesis.}
+  \end{exampleblock}
+
+  \begin{alertblock}{Lo que pedimos}
+    \scriptsize
+    Aval de que interfaces virtuales \emph{con granularidad de barrido} satisfacen
+    §4.2. Y confirmación de \cod{ADR-012}: \cod{Mesh} como \textbf{contrato de
+    compilación} (\cod{static\_assert}), no clase virtual, porque se consulta
+    celda a celda. \emph{Mejor acordarlo por escrito antes de la defensa que
+    durante.}
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{D-2 · 2D: \emph{dimensional splitting} vs. \emph{unsplit}}
+  \centering\scriptsize
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    & \textbf{A — Strang/Godunov \emph{splitting}} & \textbf{B — \emph{Unsplit}} \\
+    \midrule
+    Esfuerzo inicial                 & menor & mayor: dirección + rotación \\
+    Error adicional                  & término de separación $O(\Delta t^2)$ & ninguno \\
+    Criterio de CFL                  & el 1D por eje & distinto; hay que verificarlo \\
+    Comparable con \cod{Code\_Euler2D}& \textbf{se pierde} & se conserva \\
+    Simetría $x\leftrightarrow y$     & no exacta & exacta a nivel de redondeo \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.5em}
+  \begin{exampleblock}{Nuestra recomendación: B, \emph{unsplit} — tres razones}
+    \scriptsize
+    \textbf{1. Contamina la medición.} La pregunta es «cuánto cambia el resultado
+    al cambiar el solver». Con un término $O(\Delta t^2)$ de por medio, parte de la
+    diferencia entre HLLE y HLLC \emph{no es del solver}: mezclamos la variable
+    que queremos aislar con una que introdujimos nosotros.
+    \\[2pt]
+    \textbf{2. Pierde la regresión en 2D.} Su \cod{Code\_Euler2D} es \emph{unsplit}.
+    Con \emph{splitting} el CFL es otro, los pasos difieren, y la comparación
+    celda a celda deja de ser posible. Perderíamos en 2D el activo más valioso que
+    tenemos en 1D.
+    \\[2pt]
+    \textbf{3. La simetría deja de ser exacta.} Con \emph{unsplit}, la
+    transposición $x\leftrightarrow y$ con $u\leftrightarrow v$ se verifica a
+    $10^{-16}$: la prueba más sensible para detectar un error en la rotación.
+  \end{exampleblock}
+
+  \begin{alertblock}{Lo que pedimos confirmar}
+    \scriptsize
+    El esquema \emph{unsplit} exige una segunda fórmula de CFL
+    $\;\Delta t = \mathrm{CFL}\big/\left(S_x/\Delta x + S_y/\Delta y\right)$.
+    \textbf{Es propuesta nuestra, no está implementada.} ¿Es la forma que usa su
+    código? Si difiere, los pasos no coincidirán por una razón que no es un error
+    nuestro.
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[fragile]{D-3 · Estimación de velocidades de onda}
+
+  \begin{columns}[t]
+    \begin{column}{0.5\textwidth}
+      \begin{block}{Lo que hay hoy, con precisión}
+        \scriptsize
+\begin{lstlisting}
+S_L = min(u_L - a_L, u_R - a_R)
+S_R = max(u_L + a_L, u_R + a_R)
+\end{lstlisting}
+        Estimaciones directas de \textbf{Davis} (Toro §10.5.1), la columna
+        «Simple» del Cuadro 3.1. \textbf{No son Einfeldt}: no hay promedios de Roe
+        en ninguno de los dos códigos. $S_*$ sigue Toro (10.37), verificado contra
+        los valores estrella publicados.
+      \end{block}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{alertblock}{Consecuencia que hay que decir claro}
+        \scriptsize
+        \textbf{Lo que el anteproyecto llama HLLE no está implementado.} Lo que
+        está implementado es HLL con Davis. El OE2 nombra «HLLE y HLLC»: es un
+        hueco de alcance real, no una cuestión de nombres.
+      \end{alertblock}
+      \begin{exampleblock}{Dato medido hoy (caso 2, casi vacío)}
+        \scriptsize
+        \cod{floor\_rho\_hits = 0} · \cod{floor\_p\_hits = 0}.
+        Davis preserva la positividad \textbf{sin disparar ningún piso}.
+      \end{exampleblock}
+    \end{column}
+  \end{columns}
+
+  \begin{exampleblock}{Recomendación: las tres coexisten; ninguna sustituye a otra}
+    \scriptsize
+    «Cuál elegimos» es la pregunta equivocada: \textbf{la diferencia entre
+    estimaciones es justo lo que la tesis mide}. Si elegimos una, destruimos el
+    objeto de estudio. (1) \cod{Hll} intacto con Davis, ancla de regresión.
+    (2) \cod{Hlle} nuevo con Roe + Einfeldt: cierra el OE2 y produce la medición
+    del OE1. (3) El híbrido de Toro (PVRS/TRRS) solo si un caso lo exige; hoy
+    ninguno lo exige.
+    \\[2pt]
+    \textbf{Propuesta extra:} hacer la estimación de velocidades un punto de
+    variación \emph{independiente} del solver. Permite cruzar «HLLC con Davis»
+    contra «HLLC con Einfeldt» y \textbf{dobla la resolución de la matriz} sin
+    escribir un solver nuevo.
+  \end{exampleblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{D-4 · Soluciones exactas y de referencia}
+
+  \begin{block}{En 1D ya está decidido \emph{por el código}}
+    \scriptsize
+    \cod{ExactRiemannSolver} implementa Toro cap. 4: $f_K(p)$ con ramas de choque
+    y rarefacción, Newton con semilla TRRS (4.46), muestreo autosimilar y criterio
+    de vacío (4.40). Verificado contra los valores publicados de Toro.
+    Residuos de hoy: $8.88\times10^{-16}$ y $1.42\times10^{-14}$.
+    \\[3pt]
+    \textbf{Por qué en C++ y no en un script externo:} produce los \cod{*\_exact.xl}
+    en la misma corrida y la misma malla, sin interpolación; los mismos tests lo
+    verifican contra Toro; y un script reintroduciría una dependencia de Python
+    para calcular un número que va en la memoria. \cod{ADR-022}: el solver exacto
+    \textbf{no participa} en el avance temporal, o la comparación sería circular.
+  \end{block}
+
+  \centering\scriptsize
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    \textbf{En 2D} & \textbf{A — malla ultra-fina propia} & \textbf{B — datos de la literatura} \\
+    \midrule
+    Independencia  & \textbf{ninguna} & total \\
+    Circularidad   & \textbf{riesgo alto} & ninguno \\
+    Qué demuestra  & autoconsistencia & acuerdo con lo publicado \\
+    Nombre correcto& \emph{verificación} & \emph{validación} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.4em}
+  \begin{exampleblock}{Recomendación: las dos, con roles y nombres distintos}
+    \scriptsize
+    \textbf{B} (Liska \& Wendroff 2003, digitalizado, con su error estimado) es la
+    referencia de validación. \textbf{A} vive en \cod{tests/baseline/}, nunca en
+    \cod{tests/reference/}, y se llama estudio de autoconvergencia.
+    \textbf{Tercer pilar sin referencia externa:} simetría radial, transposición
+    $x\leftrightarrow y$ y conservación con fronteras periódicas — detectan errores
+    que una comparación visual con una figura publicada no detectaría.
+  \end{exampleblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{D-4 · Material que necesitamos de usted}
+
+  \begin{alertblock}{Cinco peticiones concretas, todas de bajo coste}
+    \small
+    \begin{enumerate}
+      \item \cod{correr\_pruebas.py} — el \cod{Makefile} de \cod{Code\_Euler2D} la
+            invoca, pero no venía en ningún paquete. Sin ella no conocemos su
+            criterio operativo de «pasa», sus tolerancias ni sus métricas.
+      \item \textbf{\cod{Code\_Euler1D} actualizado.} Tenemos el estado del 18 de
+            agosto, 07:36. Ese día a las 18:21 hay un commit («el piso de presión
+            deja de dispararse en silencio») que declara haber modificado Euler1D;
+            nuestro \cod{euler1d.f90} \emph{no} contiene ese contador.
+            \textbf{Validamos contra una versión que usted ya no tiene.}
+      \item Confirmación de que no hay entregas de Euler posteriores al 18-ago.
+      \item \textbf{Un ejemplo del estándar esperado} para el capítulo de
+            resultados. El entregable central es una tabla y una figura: saber el
+            formato ahorra una iteración completa.
+      \item La \textbf{fórmula de CFL} de su \cod{Code\_Euler2D} \emph{unsplit}.
+    \end{enumerate}
+  \end{alertblock}
+
+  \begin{block}{Y una confirmación de criterio (B-5)}
+    \small
+    Tolerancia propuesta:
+    $\max|\text{diff}| \le 10^{-12} + 10^{-9}\max|\text{ref}|$ en todas las
+    variables \textbf{y número de pasos idéntico}. \emph{Ya se cumple hoy};
+    confirmarlo sirve para afirmarlo en la memoria sin tener que defender el número.
+  \end{block}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{D-5 · Herramientas, dependencias y formatos}
+
+  \begin{block}{Punto de partida: cero dependencias externas obligatorias (\cod{ADR-010})}
+    \scriptsize
+    Compilar y probar requiere solo un compilador y CMake. Nada de red,
+    submódulos ni gestores de paquetes.
+  \end{block}
+
+  \centering\scriptsize
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Decisión} & \textbf{Opción A} & \textbf{Opción B} & \textbf{Recomendación} \\
+    \midrule
+    Configuración & JSON, parser propio & \cod{nlohmann/json} versionado & \textbf{JSON, no YAML} \\
+                  & \multicolumn{2}{l}{\emph{(YAML exigiría biblioteca: formato sutil, indentación significativa)}} & \textbf{A o B, nos vale} \\
+    \midrule
+    Tests & arnés propio (actual) & \textbf{Catch2 v2}, cabecera única & \textbf{B} \\
+          & \multicolumn{2}{l}{\emph{GoogleTest descartado: su integración práctica exige red}} & \cod{ADR-004} \\
+    \midrule
+    Salida & \cod{.xl} (actual) & CSV 1D + \textbf{VTK legacy} 2D & \textbf{B, conservando A} \\
+           & \multicolumn{2}{l}{\emph{VTK legacy ASCII a mano: $\approx$ 60 líneas, sin enlazar VTK-dev}} & \cod{ADR-011} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.5em}
+  \begin{exampleblock}{Por qué conservamos siempre el camino antiguo}
+    \scriptsize
+    No es duplicación gratuita. Conservar namelist y \cod{.xl} es lo que preserva
+    \textbf{indefinidamente} la capacidad de ejecutar sus \cod{input.par} y
+    comparar byte a byte. Y es la demostración práctica del desacoplamiento que
+    defiende el OE1: \textbf{dos adaptadores que convergen en un único punto de
+    validación}.
+  \end{exampleblock}
+
+  \begin{center}\scriptsize
+    Y una pregunta menor que ahorra rehacer figuras (P-14): ¿adoptamos el estilo de
+    sus herramientas —mapas en \cod{inferno}, perfiles en blanco y negro— como
+    estándar del proyecto?
+  \end{center}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[fragile]{D-6 · Alcance de WENO y celdas fantasma}
+
+  \begin{columns}[t]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{El dato que decide — \cod{physics/field.hpp}}
+\begin{lstlisting}
+inline constexpr int kGhostCells = 2;
+\end{lstlisting}
+        \scriptsize
+        Dos fantasmas por lado: exactamente lo que MUSCL necesita en la cara
+        $k+1/2$ ($k-1,k,k+1,k+2$). Ni una más.
+      \end{block}
+    \end{column}
+    \begin{column}{0.52\textwidth}
+      \centering\scriptsize
+      \begin{tabular}{@{}lcc@{}}
+        \toprule
+        & \textbf{WENO3} & \textbf{WENO5} \\
+        \midrule
+        Stencil            & 3 celdas & 5 celdas \\
+        Celdas fantasma    & \textbf{2 (las de hoy)} & \textbf{3} \\
+        Cumple «orden 3+»  & \si & \si \\
+        Archivos del núcleo& solo \cod{reconstruction/} & $+$ \cod{field.hpp} $+$ \textbf{3 fronteras} \\
+        Reflexión de Mach 2D & sin impacto & revisar pared y \textbf{esquinas} \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.4em}
+  \begin{exampleblock}{Recomendación: WENO3 — y la ironía que conviene oír}
+    \scriptsize
+    WENO5 sería \textbf{el único cambio del proyecto que daña la afirmación que la
+    tesis mide}: el OE1 va a reportar «archivos del núcleo tocados al añadir un
+    esquema $=$ 0», y WENO5 convierte «añadir un reconstructor» en una modificación
+    del núcleo. WENO3 no tiene ese problema y cumple igual «orden 3+».
+  \end{exampleblock}
+
+  \begin{alertblock}{Pero antes del orden hay una pregunta previa y mayor: A-2}
+    \scriptsize
+    \textbf{¿WENO es entregable comprometido o trabajo futuro?} Es la mayor adición
+    técnica del proyecto y el único entregable grande que \textbf{no toca la
+    pregunta de investigación}. Si el tiempo aprieta es el primer candidato a
+    trabajo futuro: preferimos decidirlo \textbf{hoy por escrito} que descubrirlo
+    en la semana 14. Si entra, debe decidirse \textbf{antes} de F8.
+  \end{alertblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Decisiones rápidas: un minuto cada una}
+  \centering\scriptsize
+  \begin{tabular}{@{}clp{72mm}@{}}
+    \toprule
+    & \textbf{Punto} & \textbf{Recomendación} \\
+    \midrule
+    R-1 & C++17 vs C++20 & \textbf{Bajar a C++17.} El marco dice C++17, el CMake dice C++20. Verificado que no se usa nada exclusivo de C++20: \textbf{es una línea} \\
+    R-2 & Nombre del proyecto & Renombrar a \textbf{FVLab} / \cod{fvlab}. Un namespace \cod{euler1d::} en código 2D resta credibilidad. Sin efecto numérico \\
+    R-3 & Formato del diagrama (B-1) & ¿UML formal, C4 o libre? Hay uno usable tal cual; rehacerlo en notación formal es un día \\
+    R-4 & Verificación vs validación & \emph{Verificación} en 1D, \emph{validación} en 2D, con nota al pie citando a Oberkampf y Roy \\
+    R-5 & El laboratorio GUI & ¿Contribución evaluable del OE4 o material de apoyo? Hoy trabajamos en él \emph{sin} que esté en el alcance \\
+    R-6 & Objetivo de rendimiento & Propuesta: Lax--Liu en $400^2$ hasta $t_f$ en $<10$ min en un núcleo. Sin número no es verificable \\
+    R-7 & Integración continua & Activarla. Sin CI, portabilidad, determinismo y regresión son \textbf{promesas}, no hechos \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[shrink]{Resumen: los doce puntos a cerrar}
+  \centering\scriptsize
+  \begin{tabular}{@{}clll@{}}
+    \toprule
+    \textbf{\#} & \textbf{Pregunta} & \textbf{Bloquea} & \textbf{Nuestra recomendación} \\
+    \midrule
+    A-1 & ¿Rige el anteproyecto sobre la presentación? & \textbf{todo el alcance} & sí, el anteproyecto \\
+    A-2 & ¿WENO entregable o trabajo futuro? & F11 & decidirlo hoy \\
+    B-1 & Formato del diagrama de componentes & F14 & el existente, o UML \\
+    B-2 & ¿Reflexión de Mach comprometida? & F12 & opcional; Lax--Liu ya cumple el OE3 \\
+    B-3 & ¿Cuántas configuraciones de Lax--Liu? & F12 & la 3, la de su código \\
+    B-4 & ¿Matriz $3\times3$ o HLLE vs HLLC? & F6, F12 & infraestructura completa, subconjunto presentado \\
+    B-5 & Tolerancia frente al Fortran & criterio & $10^{-12}+10^{-9}\max|\text{ref}|$ y pasos idénticos \\
+    C-1 & ¿C++17 o C++20? & implementación & \textbf{C++17} \\
+    C-2 & ¿Catch2 o arnés propio? & migración & \textbf{Catch2 v2 versionado} \\
+    C-3 & ¿JSON o YAML? & F5 & \textbf{JSON} \\
+    C-4 & ¿CSV y VTK conservando \cod{.xl}? & F5, F10 & \textbf{sí, ambos} \\
+    C-5 & ¿WENO3 o WENO5? & F11 & \textbf{WENO3} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.6em}
+  \begin{exampleblock}{Si nos quedamos sin tiempo}
+    \small
+    Lo imprescindible de hoy es \textbf{A-1}, \textbf{A-2} y la \textbf{fórmula de
+    CFL 2D}. Todo lo demás lo podemos avanzar y traer medido a la próxima reunión:
+    cinco de los seis hitos de la ruta crítica no están bloqueados por nada.
+  \end{exampleblock}
+\end{frame}
+
+% =============================================================================
+\begin{frame}[plain]
+  \centering
+  \vspace{1.2cm}
+  {\Large\textbf{Gracias}}
+
+  \vspace{0.8cm}
+  \begin{minipage}{0.82\textwidth}
+    \small
+    \begin{center}
+      \textbf{Lo que llevamos a esta reunión}
+      \\[6pt]
+      Un núcleo 1D con \textbf{87 casos verdes}, \textbf{26/26} configuraciones
+      equivalentes al Fortran con pasos idénticos, \textbf{orden 2 medido} en $L_1$,
+      y la primera celda del banco de pruebas: HLLC reduce el error
+      \textbf{un factor 2{,}58} frente a HLL en el caso del contacto.
+      \\[8pt]
+      Lo que pedimos: \textbf{doce decisiones}, \textbf{cinco materiales} y el
+      aval de la hoja de ruta.
+    \end{center}
+  \end{minipage}
+
+  \vspace{1cm}
+  {\scriptsize\color{gris}
+   Documento de respaldo: \cod{docs/reunion\_avance/guia\_decisiones\_arquitectura.md}\\
+   Todas las cifras son reproducibles con cuatro comandos (anexo de la guía).}
+\end{frame}
+
+\end{document}

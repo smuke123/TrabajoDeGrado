@@ -1,0 +1,42 @@
+# Herramientas del agente: configuracion local, no es contenido de la tesis
+.cursor/
+
+# Basura de descompresion en macOS
+__MACOSX/
+.DS_Store
+._*
+
+# Artefactos de compilacion del Fortran
+*.o
+*.mod
+*.a
+xEuler1D
+
+# Salidas de simulacion: regenerables ejecutando el solver
+*.xl
+run_info.txt
+
+# LaTeX
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.vrb
+
+# Python
+__pycache__/
+*.pyc
+
+# Editores y sistema
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

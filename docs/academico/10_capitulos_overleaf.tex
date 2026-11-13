@@ -1,0 +1,81 @@
+% Fragmento para Overleaf: sustituye \chapter{Marco Teorico} ... hasta antes de \chapter{Cronograma}.
+% Hacer copia de main.tex. Compilar pdfLaTeX + biber.
+% Texto alineado con docs/academico/01_estado_del_arte.md y 02_metodologia.md.
+
+\chapter{Estado del arte}
+
+Este capítulo no es un manual de dinámica de gases. Sitúa el proyecto ---un \textit{framework} compacto para las ecuaciones de Euler por volúmenes finitos--- frente a los métodos que el artefacto debe comparar, al software científico existente y a las prácticas de ingeniería de software científico. No se declara una revisión sistemática protocolizada.
+
+\section{Fundamentos numéricos pertinentes}
+
+Las ecuaciones de Euler para un gas ideal no viscoso y sin conducción de calor son el prototipo de sistema hiperbólico conservativo sobre el que se diseñan esquemas de captura de choques \parencite{toro2009,leveque2002,hirsch2007}. El vector de estado $U=(\rho,\rho\mathbf{v},E)$ y el flujo $F(U)$ permiten conservar masa, momento y energía en la malla, condición necesaria para localizar discontinuidades \parencite{toro2009}. Las soluciones pueden incluir choques, rarefacciones y discontinuidades de contacto; el contacto (salto de densidad con presión y velocidad continuas) es el criterio que distingue la familia HLL de HLLC \parencite{toro2009}.
+
+El método de volúmenes finitos aproxima el flujo en cada cara mediante un problema de Riemann local \parencite{leveque2002}. En una malla uniforme unidimensional,
+\begin{equation}
+\frac{\mathrm{d}U_i}{\mathrm{d}t}=-\frac{1}{\Delta x}\bigl(\hat{F}_{i+1/2}-\hat{F}_{i-1/2}\bigr).
+\end{equation}
+MUSCL eleva el orden en zonas suaves con una reconstrucción lineal limitada; el paso explícito queda acotado por CFL \parencite{toro2009,hirsch2007}. El solver de Riemann exacto sirve como \textbf{referencia de verificación}, no como dato de laboratorio \parencite{toro2009,oberkampf2010}; es costoso si se invocara en cada cara, de ahí las aproximaciones. En el núcleo C++ unidimensional del proyecto el exacto no participa en el avance temporal (inspección del repositorio).
+
+Según \textcite{toro2009}, HLL usa dos ondas y promedia el estado intermedio, lo que difumina el contacto; HLLC introduce $S^{*}$ y restaura esa onda; HLLE se distingue por la estimación de velocidades de Einfeldt, no por tener tres ondas. El código C++ actual implementa HLL (estimaciones tipo Davis) y HLLC, \textbf{no} HLLE. Comparar HLL con HLLC en un mismo problema es coherente con el prototipo; incluir HLLE o WENO es una extensión sujeta a decisión del director. \textcite{liska2003} muestran que el ordenamiento de esquemas en Euler 1D/2D depende del caso: no hay un único solver universalmente superior.
+
+\section{Software existente}
+
+Los criterios de comparación se derivan de los objetivos del plan (intercambiar un componente, reproducir un experimento, hacer visible el método), no del número de modelos de turbulencia.
+
+El uso de volúmenes finitos y solvers de Riemann para las ecuaciones de Euler no es meramente teórico; existen implementaciones concretas. En \textit{Clawpack: Building an Open Source Ecosystem for Solving Hyperbolic PDEs} los solvers de Riemann comparten interfaz y un repositorio común; en PyClaw la elección puede hacerse en tiempo de ejecución e incluye HLL y HLLC para Euler unidimensional \parencite{mandli2016}. Esos resultados sustentan que la intercambiabilidad de flujos numéricos es un contrato de software ya realizado en un código maduro. Por otro lado, \textit{Comparison of Several Difference Schemes on 1D and 2D Test Problems for the Euler Equations} ejecuta varios esquemas sobre una batería común de problemas de Euler y muestra que el ordenamiento depende del caso, no de un ganador universal \parencite{liska2003}. Ello justifica un banco de pruebas en el que se varíe de a un componente, con las mismas mallas y normas.
+
+\textcite{weller1998} y \textcite{jasak2009} sitúan OpenFOAM como código abierto de investigación e industria. No se afirma que sea imposible modificar un flujo numérico; sí que su tamaño no está pensado como laboratorio 1D de pocas semanas. \textcite{economon2016} presentan SU2 como suite de simulación y diseño. \textcite{stone2020} describen Athena++ como marco AMR con MHD.
+
+\textcite{mandli2016} documentan Clawpack: interfaz común de solvers de Riemann; en Fortran la selección es típica en compilación y en PyClaw en tiempo de ejecución. La documentación oficial de Clawpack lista solvers Python de Euler HLL y HLLC. Por tanto \textbf{no} es cierto que no exista software abierto donde se intercambie HLL/HLLC. El hueco no es esa inexistencia.
+
+\textcite{wilson2014} recomiendan versionado y pruebas en software científico; \textcite{ramakrishnan2017}, usabilidad; \textcite{mesnard2017}, que reproducir CFD es difícil aun con código público. \textcite{oberkampf2010} distinguen verificación (¿se resuelven bien las ecuaciones discretas?) de validación (¿el modelo representa la física medida?).
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{p{3.2cm}cccc}
+\hline
+Criterio & OpenFOAM/SU2 & Clawpack & Athena++ & Prototipo 1D de este TG \\
+\hline
+Euler FVM & Sí & Sí & Sí & Sí (1D) \\
+Cambiar Riemann & Costoso & Sí (PyClaw) & Experto & Sí (namelist) \\
+Código compacto & No & Medio & No & Objetivo de diseño \\
+Trazar ecuación--código en GUI & No & Docs, no GUI UIS & No & Prototipo \\
+\hline
+\end{tabular}
+\caption{Comparación cualitativa respecto de los objetivos del trabajo de grado, no respecto de madurez industrial.}
+\end{table}
+
+\section{Síntesis y hueco}
+
+Los métodos están maduros \parencite{toro2009,leveque2002}. El software maduro existe y Clawpack ya permite cambiar Riemann \parencite{mandli2016}. El proyecto \textbf{propone explorar} un artefacto compacto en C++, con configuración explícita, regresión y (si se conserva el laboratorio) el recorrido ecuación--algoritmo--implementación--gráfica, para formación en Ingeniería de Sistemas, sin pretender sustituir OpenFOAM, SU2 ni Clawpack. La contribución defendible es hacer observable el efecto de combinar reconstrucción y flujo numérico en problemas de Riemann estándar, no «inventar el primer código intercambiable».
+
+WENO, HLLE, Euler 2D en el mismo binario y JSON/YAML se tratan como \textbf{propuestos} hasta que el director los confirme. El laboratorio gráfico es prototipo.
+
+\chapter{Metodología}
+
+\section{Tipo de investigación}
+
+El trabajo es investigación aplicada con desarrollo de un artefacto de software científico. La unidad de análisis es el \textit{framework} (núcleo C++ y, en el prototipo, el laboratorio Python). No se declara un estudio de usuarios ni Design Science Research en sentido institucional completo, salvo que el Comité lo exija: no hay encuesta ni resultados de aprendizaje que reportar.
+
+\section{Ciclo de desarrollo}
+
+El desarrollo es incremental y verificado. El núcleo unidimensional ya existe; las fases de implementación 1D se leen como mantenimiento, extensión controlada y documentación, no como reescritura. El ciclo no autoriza alterar HLLC para acomodar la interfaz gráfica.
+
+Las fases son: (0) inventario de lo implementado frente a lo propuesto; (1) literatura y requisitos; (2) arquitectura alineada con \texttt{include/euler1d}; (3) núcleo numérico (regresión en verde); (4) configuración, CLI y prototipo de GUI sin duplicar el solver; (5) verificación y regresión; (6) inspección educativa, sin inventar usuarios; (7) manuales y prueba de reproducibilidad desde el repositorio.
+
+El contrato de configuración vigente es el namelist \texttt{\&euler} y los archivos \texttt{.xl}. JSON o YAML, si se adoptan, son extensión.
+
+\section{Verificación y validación}
+
+Se adopta el vocabulario de \textcite{oberkampf2010}. La comparación con el Riemann exacto unidimensional es \textbf{verificación de código y de solución}, no validación física experimental. No hay campaña de laboratorio. Los casos 2D de la literatura solo aplican si existe el solver 2D.
+
+La suite de tests y la comparación con el Fortran de referencia del núcleo 1D no se modifican como parte de la redacción académica. Los umbrales numéricos nuevos (normas L1/L2 oficiales del TG) quedan provisionales hasta aprobación del director.
+
+\section{Evaluación educativa}
+
+Si se mantiene el objetivo de documentación pedagógica, la evidencia proporcionada a un trabajo de grado es una lista de comprobación (localizar la ficha de un método, ejecutar un caso documentado, ver el archivo fuente citado). Un estudio con participantes requiere diseño ético y no se finge.
+
+\section{Riesgos}
+
+El principal riesgo es un alcance (WENO, HLLE, 2D, JSON, estudio de aula) mayor que el calendario. Mitigación: decisión explícita del director. Riesgo científico: que la GUI implemente otro HLLC; se prohíbe. Riesgo de lenguaje: llamar validación al tubo de Sod.

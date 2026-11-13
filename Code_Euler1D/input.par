@@ -1,0 +1,8 @@
+&euler
+ test = 1
+ N = 400
+ cfl = 0.9
+ gamma = 1.4
+ limiter = 'vl'
+ solver = 'hllc'
+/
